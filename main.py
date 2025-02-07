@@ -113,14 +113,14 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=2):
 def main_loop():
     templocation = "./files"
     radar_id = 'KGSP'
-    start = pd.Timestamp(2023, 5, 9, 21).tz_localize('UTC')
+    start = pd.Timestamp(2023, 5, 9, 18).tz_localize('UTC')
     end = pd.Timestamp(2023, 5, 9, 22).tz_localize('UTC')
     
     conn = nexradaws.NexradAwsInterface()
     scans = conn.get_avail_scans_in_range(start, end, radar_id)
     print(f"Found {len(scans)} scans")
     
-    results = conn.download(scans[0:5], templocation)
+    results = conn.download(scans, templocation)
     
     # Initialize accumulation grid
     accumulated_mesh = None
