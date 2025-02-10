@@ -1,165 +1,197 @@
+# main.py (modified)
 import numpy as np
 import pandas as pd
-import nexradaws
 import pyart
-from mesh_grid import main
+import nexradaws
+from scipy import ndimage
+from mesh_grid import main as hail_mesh  # Renamed import for clarity
 
 def get_temperature_levels():
-    freezing_level = 3200
-    neg20_level = 6500
+    """
+    Provide environmental temperature levels for hail algorithm.
+    Returns [freezing_level, negative20C_level] in meters.
+    """
+    # In a real-world scenario, these could be fetched from a sounding or model data.
+    freezing_level = 3200   # 0°C level (default 3.2 km, can adjust per environment)
+    neg20_level    = 6500   # -20°C level (default 6.5 km)
     return [freezing_level, neg20_level]
 
 def process_radar_volume(radar):
-    # Create 3D grid from radar sweeps
+    """
+    Grid a single radar volume to Cartesian coordinates and compute hail metrics.
+    Returns a dictionary with MESH and related fields.
+    """
+    # Define grid size and extent
+    grid_shape = (20, 500, 500)  # (vertical levels, y, x)
+    grid_limits = ((0, 20000),    # 0 to 20 km altitude
+                   (-150000, 150000),  # y: -150 to +150 km
+                   (-150000, 150000))  # x: -150 to +150 km
+
+    # Use a tighter radius and Cressman weighting to avoid oversmoothing hail cores
+    radar_fields = ['reflectivity']
     grid = pyart.map.grid_from_radars(
         (radar,),
-        grid_shape=(20, 500, 500),  # vertical, horizontal points
-        grid_limits=((0, 20000), (-150000, 150000), (-150000, 150000)),  # meters
+        grid_shape=grid_shape,
+        grid_limits=grid_limits,
+        fields=radar_fields,
+        weighting_function="Cressman",
+        constant_roi=1000.0,         # 1 km radius of influence for interpolation
+        roi_func='constant'          # use constant radius (override default dist_beam)
     )
-    
-    # Get temperature levels
+    # Get environmental levels and compute hail fields (MESH, POSH, etc.)
     levels = get_temperature_levels()
-    
-    # Calculate MESH and related fields
-    mesh_data = main(
+    mesh_data = hail_mesh(
         grid=grid,
         dbz_fname='reflectivity',
         levels=levels,
-        radar_band='S',  # NEXRAD is S-band
-        mesh_method='mh2019_75'  # More modern calibration
+        radar_band='S',         # NEXRAD is S-band radar
+        mesh_method='mh2019_75' # use modern calibration for MESH (75th percentile)
     )
-    
     return mesh_data
 
 def sort_boundary_points(points):
     """Sort boundary points in clockwise order around their centroid."""
-    # Calculate centroid
+    if points.size == 0:
+        return points
     centroid = points.mean(axis=0)
-    
-    # Calculate angles from centroid to each point
-    angles = np.arctan2(points[:,0] - centroid[0], 
-                       points[:,1] - centroid[1])
-    
-    # Sort points by angle
+    angles = np.arctan2(points[:, 0] - centroid[0],
+                        points[:, 1] - centroid[1])
     sorted_indices = np.argsort(angles)
     return points[sorted_indices]
 
-def get_hail_bands(mesh_data, lat, lon, min_distance_km=2):
-    """Calculate hail size bands from MESH data."""
+def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
+    """
+    Calculate hail size bands from MESH data.
+    Returns a dict of hail bands with their polygon boundary points.
+    `min_distance_km` controls the gap closure for polygon merging.
+    """
+    # Hail size thresholds (in mm) corresponding to various size bands
     thresholds = {
         "0.75inch": 19,
         "1inch": 25,
+        "1.2inch": 32,
         "1.5inch": 38,
+        "1.75inch": 44,
         "2inch": 51,
         "2.5inch": 64,
-        "3inch": 76,
-        "4inch": 102
+        "3inch":   76,
+        "4inch":   102
     }
-    
-    # Open output file
+
+        # Open output file
     with open('hail_contours.txt', 'w') as f:
         f.write("Hail Contour Data\n")
         f.write("=================\n\n")
-        
+
         bands = {}
-        mesh = mesh_data[0]
-        grid_res_km = 0.6
+        mesh = mesh_data[0]  # 2D MESH field (assumed at index 0 of mesh_data list)
+        grid_res_km = 0.6    # horizontal grid resolution in km (600 m)
+        # Compute structuring element size (in pixels) for morphological operations
         structure_size = max(1, int(min_distance_km / grid_res_km))
-        
+        structure = np.ones((structure_size, structure_size), dtype=bool)
+
+        # Identify hail regions for each threshold
         for name, threshold in thresholds.items():
+            # Create a mask of where MESH exceeds this threshold
             mask = mesh > threshold
-            if np.any(mask):
-                structure = np.ones((structure_size, structure_size))
-                
-                from scipy import ndimage
-                dilated = ndimage.binary_dilation(mask, structure=structure)
-                eroded = ndimage.binary_erosion(dilated, structure=structure)
-                labeled_array, num_regions = ndimage.label(eroded, structure=np.ones((3,3)))
-                
-                boundary_points_list = []
-                
-                f.write(f"\n{name} (threshold: {threshold}mm)\n")
-                f.write("-" * 40 + "\n")
-                
-                for region_num in range(1, num_regions + 1):
-                    region_mask = labeled_array == region_num
-                    gradient_y, gradient_x = np.gradient(region_mask.astype(float))
-                    boundary_mask = (gradient_x**2 + gradient_y**2) > 0
-                    
-                    if np.any(boundary_mask):
-                        y_idx, x_idx = np.where(boundary_mask)
-                        boundary_points = np.column_stack((
-                            lat[y_idx, x_idx],
-                            lon[y_idx, x_idx]
-                        ))
-                        
-                        boundary_points = sort_boundary_points(boundary_points)
-                        boundary_points_list.append(boundary_points)
-                        
-                        f.write(f"\nRegion {region_num}\n")
-                        f.write(f"Points: {len(boundary_points)}\n")
-                        f.write("lat,lon\n")
-                        for point in boundary_points:
-                            f.write(f"{point[0]:.4f},{point[1]:.4f}\n")
-                
-                if boundary_points_list:
-                    bands[name] = {
-                        "threshold_mm": threshold,
-                        "boundary_points": boundary_points_list
-                    }
-    
-    return bands
+            if not np.any(mask):
+                continue  # no hail of this size
+            # Morphological filtering: close small gaps within `min_distance_km`
+            dilated = ndimage.binary_dilation(mask, structure=structure)
+            filled = ndimage.binary_erosion(dilated, structure=structure)
+            # Label connected hail areas
+            labeled_array, num_regions = ndimage.label(filled, structure=np.ones((3,3), dtype=int))
+            boundary_points_list = []
+
+            f.write(f"\n{name} (threshold: {threshold}mm)\n")
+            f.write("-" * 40 + "\n")
+            
+            for region_idx in range(1, num_regions + 1):
+                region_mask = (labeled_array == region_idx)
+                # Skip tiny regions (noise) by area – require at least ~4 pixels (~0.86 km^2)
+                if np.sum(region_mask) < 4:
+                    continue
+                # Find boundary by looking at the gradient (edge) of the region mask
+                grad_y, grad_x = np.gradient(region_mask.astype(float))
+                boundary_mask = (grad_x**2 + grad_y**2) > 0
+                if not np.any(boundary_mask):
+                    continue
+                y_idx, x_idx = np.where(boundary_mask)
+                # Collect lat-lon coordinates of the boundary
+                boundary_points = np.column_stack((lat[y_idx, x_idx], lon[y_idx, x_idx]))
+                boundary_points = sort_boundary_points(boundary_points)
+                boundary_points_list.append(boundary_points)
+                f.write(f"\nRegion {region_idx}\n")
+                f.write(f"Points: {len(boundary_points)}\n")
+                f.write("lat,lon\n")
+                for point in boundary_points:
+                    f.write(f"{point[0]:.4f},{point[1]:.4f}\n")
+
+            if boundary_points_list:
+                bands[name] = {
+                    "threshold_mm": threshold,
+                    "boundary_points": boundary_points_list
+                }
+        return bands
 
 def main_loop():
-    templocation = "./files"
-    radar_id = 'KGSP'
-    start = pd.Timestamp(2023, 5, 9, 18).tz_localize('UTC')
-    end = pd.Timestamp(2023, 5, 9, 22).tz_localize('UTC')
-    
+    # Define radar site and time range for analysis
+    radar_id = 'KCAE'
+    start = pd.Timestamp(2023, 5, 9, 10, tz='UTC')
+    end   = pd.Timestamp(2023, 5, 10, 2, tz='UTC')
+    # Set up AWS NEXRAD data access
     conn = nexradaws.NexradAwsInterface()
     scans = conn.get_avail_scans_in_range(start, end, radar_id)
-    print(f"Found {len(scans)} scans")
-    
-    results = conn.download(scans, templocation)
-    
-    # Initialize accumulation grid
+    print(f"Found {len(scans)} scans for {radar_id}")
+    temp_dir="./files"
+    results = conn.download(scans, temp_dir)
+    # Initialize accumulation grid for MESH
     accumulated_mesh = None
-    grid_lat = None
-    grid_lon = None
-    
-    # First pass: accumulate maximum MESH values
+    grid_lat = grid_lon = None
+
+    # Process each radar volume and accumulate max MESH
     for scan in results.iter_success():
-        if scan.filename[-3:] != "MDM":
-            print(f"\nProcessing: {scan.filename}")
-            radar = scan.open_pyart()
-            
-            mesh_output = process_radar_volume(radar)
-            mesh = mesh_output['mesh_mh2019_75']['data']
-            
-            if accumulated_mesh is None:
-                accumulated_mesh = mesh[0]  # Initialize with first scan
-                
-                # Create grid coordinates (only need to do this once)
-                x = np.linspace(-150000, 150000, 500)
-                y = np.linspace(-150000, 150000, 500)
-                X, Y = np.meshgrid(x, y)
-                
-                radar_lat = radar.latitude['data'][0]
-                radar_lon = radar.longitude['data'][0]
-                
-                grid_lat = radar_lat + (Y/111000)
-                grid_lon = radar_lon + (X/(111000*np.cos(np.radians(radar_lat))))
-            else:
-                # Update with maximum values
-                accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
-    
-    # Now create bands from accumulated data
-    print("\nGenerating final hail swath bands...")
-    bands = get_hail_bands([accumulated_mesh], grid_lat, grid_lon)
-    
+        # Only process base radar files (exclude any intermediate files if present)
+        if scan.filename.endswith("MDM"):
+            continue
+        print(f"Processing: {scan.filename}")
+        radar = scan.open_pyart()  # read the radar volume
+        mesh_output = process_radar_volume(radar)
+        mesh = mesh_output['mesh_mh2019_75']['data']  # 3D MESH grid (1st level contains 2D field)
+        # Extract latitude/longitude grids on first iteration
+        if accumulated_mesh is None:
+            # Coordinates for the grid based on radar location and x,y offsets
+            # Create grid coordinates (only need to do this once)
+            x = np.linspace(-150000, 150000, 500)
+            y = np.linspace(-150000, 150000, 500)
+            X, Y = np.meshgrid(x, y)
+            radar_lat = radar.latitude['data'][0]
+            radar_lon = radar.longitude['data'][0]
+            # Convert Cartesian (X,Y) to lat-lon (approximate, assuming small earth curvature)
+            grid_lat = radar_lat + (Y / 111000.0)
+            grid_lon = radar_lon + (X / (111000.0 * np.cos(np.radians(radar_lat))))
+            accumulated_mesh = mesh[0]  # initialize with first scan’s MESH
+        else:
+            # Update accumulated MESH as the maximum at each grid cell over time
+            accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
+        # Clean up radar object to free memory (if needed)
+        del radar
+
+    # Once all scans are processed, compute hail polygons from the accumulated MESH
+    bands = get_hail_bands([accumulated_mesh], grid_lat, grid_lon, min_distance_km=1)
+    # (The 'bands' dict can be used to plot polygons or saved to file as needed)
     return bands
 
 if __name__ == "__main__":
     hail_bands = main_loop()
-
+    # For demonstration, print out the bands and their regions
+    for size, info in hail_bands.items():
+        print(f"\nHail size: {size} (>= {info['threshold_mm']} mm)")
+        for i, polygon in enumerate(info['boundary_points'], start=1):
+            print(f" Region {i}: {len(polygon)} boundary points")
+            # Example: print first few points
+            for pt in polygon[:5]:
+                print(f"  - {pt[0]:.4f}, {pt[1]:.4f}")
+            if len(polygon) > 5:
+                print("  ...")
 
