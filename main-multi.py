@@ -4,6 +4,8 @@ import pyart
 import nexradaws
 from scipy import ndimage
 from mesh_grid import main as hail_mesh  # Renamed import for clarity
+import multiprocessing as mp
+from functools import partial
 
 def get_temperature_levels():
     """
@@ -58,7 +60,7 @@ def sort_boundary_points(points):
     sorted_indices = np.argsort(angles)
     return points[sorted_indices]
 
-def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
+def get_hail_bands(mesh_data, lat, lon, min_distance_km=1, timestamp=None):
     """
     Calculate hail size bands from MESH data.
     Returns a dict of hail bands with their polygon boundary points.
@@ -77,10 +79,19 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
         "4inch":   102
     }
 
-        # Open output file
-    with open('hail_contours.txt', 'w') as f:
+    # Create filename with timestamp if provided
+    filename = 'hail_contours'
+    if timestamp:
+        filename += f'_{timestamp.strftime("%Y%m%d_%H%M")}'
+    filename += '.txt'
+
+    # Open output file
+    with open(filename, 'w') as f:
         f.write("Hail Contour Data\n")
-        f.write("=================\n\n")
+        f.write("=================\n")
+        if timestamp:
+            f.write(f"Time: {timestamp.strftime('%Y-%m-%d %H:%M UTC')}\n")
+        f.write("\n")
 
         bands = {}
         mesh = mesh_data[0]  # 2D MESH field (assumed at index 0 of mesh_data list)
@@ -133,63 +144,103 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
                 }
         return bands
 
-def main_loop():
+def main_loop(time_range):
+    """
+    Process radar data for a given time range.
+    
+    Args:
+        time_range (tuple): Tuple containing (start_time, end_time) as pd.Timestamp objects
+    """
+    start_time, end_time = time_range
     # Define radar site and time range for analysis
     radar_id = 'KCAE'
-    start = pd.Timestamp(2023, 5, 9, 19, tz='UTC')
-    end   = pd.Timestamp(2023, 5, 10, 1, tz='UTC')
+    
+    print(f"\nProcessing period: {start_time} to {end_time}")
+
     # Set up AWS NEXRAD data access
     conn = nexradaws.NexradAwsInterface()
-    scans = conn.get_avail_scans_in_range(start, end, radar_id)
-    print(f"Found {len(scans)} scans for {radar_id}")
-    temp_dir="./files"
+    scans = conn.get_avail_scans_in_range(start_time, end_time, radar_id)
+    print(f"Found {len(scans)} scans for {radar_id} between {start_time} and {end_time}")
+    temp_dir = f"./files_{start_time.strftime('%Y%m%d_%H%M')}"  # Unique directory for each time range
     results = conn.download(scans, temp_dir)
     # Initialize accumulation grid for MESH
     accumulated_mesh = None
     grid_lat = grid_lon = None
 
-    # Process each radar volume and accumulate max MESH
-    for scan in results.iter_success():
-        # Only process base radar files (exclude any intermediate files if present)
-        if scan.filename.endswith("MDM"):
-            continue
-        print(f"Processing: {scan.filename}")
-        radar = scan.open_pyart()  # read the radar volume
-        mesh_output = process_radar_volume(radar)
-        mesh = mesh_output['mesh_mh2019_75']['data']  # 3D MESH grid (1st level contains 2D field)
-        # Extract latitude/longitude grids on first iteration
-        if accumulated_mesh is None:
-            # Coordinates for the grid based on radar location and x,y offsets
-            # Create grid coordinates (only need to do this once)
-            x = np.linspace(-150000, 150000, 500)
-            y = np.linspace(-150000, 150000, 500)
-            X, Y = np.meshgrid(x, y)
-            radar_lat = radar.latitude['data'][0]
-            radar_lon = radar.longitude['data'][0]
-            # Convert Cartesian (X,Y) to lat-lon (approximate, assuming small earth curvature)
-            grid_lat = radar_lat + (Y / 111000.0)
-            grid_lon = radar_lon + (X / (111000.0 * np.cos(np.radians(radar_lat))))
-            accumulated_mesh = mesh[0]  # initialize with first scan's MESH
-        else:
-            # Update accumulated MESH as the maximum at each grid cell over time
-            accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
-        # Clean up radar object to free memory (if needed)
-        del radar
+    try:
+        # Process each radar volume and accumulate max MESH
+        for scan in results.iter_success():
+            # Only process base radar files (exclude any intermediate files if present)
+            if scan.filename.endswith("MDM"):
+                continue
+            print(f"Processing: {scan.filename}")
+            radar = scan.open_pyart()  # read the radar volume
+            mesh_output = process_radar_volume(radar)
+            mesh = mesh_output['mesh_mh2019_75']['data']  # 3D MESH grid (1st level contains 2D field)
+            # Extract latitude/longitude grids on first iteration
+            if accumulated_mesh is None:
+                # Coordinates for the grid based on radar location and x,y offsets
+                # Create grid coordinates (only need to do this once)
+                x = np.linspace(-150000, 150000, 500)
+                y = np.linspace(-150000, 150000, 500)
+                X, Y = np.meshgrid(x, y)
+                radar_lat = radar.latitude['data'][0]
+                radar_lon = radar.longitude['data'][0]
+                # Convert Cartesian (X,Y) to lat-lon (approximate, assuming small earth curvature)
+                grid_lat = radar_lat + (Y / 111000.0)
+                grid_lon = radar_lon + (X / (111000.0 * np.cos(np.radians(radar_lat))))
+                accumulated_mesh = mesh[0]  # initialize with first scan's MESH
+            else:
+                # Update accumulated MESH as the maximum at each grid cell over time
+                accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
+            # Clean up radar object to free memory (if needed)
+            del radar
 
-    # Once all scans are processed, compute hail polygons from the accumulated MESH
-    bands = get_hail_bands([accumulated_mesh], grid_lat, grid_lon, min_distance_km=1)
-    # (The 'bands' dict can be used to plot polygons or saved to file as needed)
-    return bands
+        # Once all scans are processed, compute hail polygons from the accumulated MESH
+        bands = get_hail_bands([accumulated_mesh], grid_lat, grid_lon, min_distance_km=1, timestamp=start_time)
+        print(f'Finished processing file with time range: {start_time} to {end_time}')
+        return bands
+    except Exception as e:
+        print(f"Error processing time range {start_time} to {end_time}: {str(e)}")
+        return None
 
 if __name__ == "__main__":
-    hail_bands = main_loop()
-    # For demonstration, print out the bands and their regions
-    for size, info in hail_bands.items():
-        print(f"\nHail size: {size} (>= {info['threshold_mm']} mm)")
-        for i, polygon in enumerate(info['boundary_points'], start=1):
-            print(f" Region {i}: {len(polygon)} boundary points")
-            # Example: print first few points
-            for pt in polygon[:5]:
-                print(f"  - {pt[0]:.4f}, {pt[1]:.4f}")
-            if len(polygon) > 5:
-                print("  ...")
+    time_ranges = [
+        # May 2024
+        (pd.Timestamp(2024, 5, 8, 0, tz='UTC'), pd.Timestamp(2024, 5, 8, 23, 59, tz='UTC')),
+        (pd.Timestamp(2024, 5, 26, 0, tz='UTC'), pd.Timestamp(2024, 5, 26, 23, 59, tz='UTC')),
+        
+        # May 2024
+        (pd.Timestamp(2024, 5, 6, 0, tz='UTC'), pd.Timestamp(2024, 5, 6, 23, 59, tz='UTC')),
+        
+        # September 2024
+        (pd.Timestamp(2024, 9, 24, 0, tz='UTC'), pd.Timestamp(2024, 9, 24, 23, 59, tz='UTC')),
+        
+        # August 2024
+        (pd.Timestamp(2024, 8, 31, 0, tz='UTC'), pd.Timestamp(2024, 8, 31, 23, 59, tz='UTC')),
+        
+        # June 2023
+        (pd.Timestamp(2023, 6, 6, 0, tz='UTC'), pd.Timestamp(2023, 6, 6, 23, 59, tz='UTC')),
+        
+        # May 2023
+        (pd.Timestamp(2023, 5, 9, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 23, 59, tz='UTC')),
+        
+        # May 2021
+        (pd.Timestamp(2021, 5, 3, 0, tz='UTC'), pd.Timestamp(2021, 5, 3, 23, 59, tz='UTC')),
+    ]
+    
+    num_cores = max(1, mp.cpu_count() - 1)
+    # num_cores = 2
+    print(f"Processing using {num_cores} CPU cores")
+    
+    # Create a pool of workers
+    with mp.Pool(processes=num_cores) as pool:
+        # Process time ranges in parallel
+        results = pool.map(main_loop, time_ranges)
+    
+    # Process results
+    for time_range, result in zip(time_ranges, results):
+        if result is not None:
+            print(f"✓ Successfully processed period: {time_range[0]} to {time_range[1]}")
+        else:
+            print(f"✗ Failed to process period: {time_range[0]} to {time_range[1]}")
