@@ -246,7 +246,7 @@ def compute_circumcircle(p1: LatLng, p2: LatLng, p3: LatLng) -> Tuple[LatLng, fl
     return LatLng(lat=uy, lng=ux), radius
 
 
-def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.009) -> List[LatLng]:
+def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.025) -> List[LatLng]:
     """
     Process polygon coordinates using alpha shape algorithm.
 
@@ -263,10 +263,26 @@ def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.009) -> L
     if len(points) < 3:
         return points
 
+    # # Filter points that are too close to each other
+    # filtered_points = []
+    # min_distance = 0.005  # Minimum distance between points
+
+    # for point in points:
+    #     if not filtered_points or all(
+    #         math.hypot(p.lat - point.lat, p.lng - point.lng) >= min_distance 
+    #         for p in filtered_points
+    #     ):
+    #         filtered_points.append(point)
+
+    # points = filtered_points
+
     # Convert to numpy array for Delaunay triangulation
     coords = np.array([[p.lng, p.lat] for p in points])
+    delaunay = None
+    triangle_indices = None
     try:
-        tri = Delaunay(coords)
+        delaunay = Delaunay(coords)
+        triangle_indices = delaunay.simplices
     except Exception:
         return compute_convex_hull(points)
 
@@ -278,7 +294,7 @@ def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.009) -> L
         edge_map[edge] = edge_map.get(edge, 0) + 1
 
     # Process triangles
-    for simplex in tri.simplices:
+    for simplex in triangle_indices:
         i, j, k = simplex
         p1, p2, p3 = [points[idx] for idx in [i, j, k]]
         center, radius = compute_circumcircle(p1, p2, p3)
