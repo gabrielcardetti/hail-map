@@ -58,11 +58,17 @@ def sort_boundary_points(points):
     sorted_indices = np.argsort(angles)
     return points[sorted_indices]
 
-def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
+def get_hail_bands(mesh_data, lat, lon, min_distance_km=1, output_file=None):
     """
     Calculate hail size bands from MESH data.
     Returns a dict of hail bands with their polygon boundary points.
-    `min_distance_km` controls the gap closure for polygon merging.
+    
+    Args:
+        mesh_data: MESH grid data
+        lat: latitude grid
+        lon: longitude grid
+        min_distance_km: controls the gap closure for polygon merging
+        output_file: path to output file (optional)
     """
     # Hail size thresholds (in mm) corresponding to various size bands
     thresholds = {
@@ -77,8 +83,13 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
         "4inch":   102
     }
 
-        # Open output file
-    with open('hail_contours.txt', 'w') as f:
+    # Modify file opening to use the output_file parameter
+    if output_file:
+        f = open(output_file, 'w')
+    else:
+        f = open('hail_contours.txt', 'w')
+
+    try:
         f.write("Hail Contour Data\n")
         f.write("=================\n\n")
 
@@ -133,62 +144,88 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=1):
                 }
         return bands
 
-def main_loop():
-    # Define radar site and time range for analysis
-    radar_id = 'KCAE'
-    start = pd.Timestamp(2023, 5, 9, 19, tz='UTC')
-    end   = pd.Timestamp(2023, 5, 10, 1, tz='UTC')
+    finally:
+        f.close()
+
+def main_loop(
+    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 19, tz='UTC'),
+    end: pd.Timestamp = pd.Timestamp(2023, 5, 10, 1, tz='UTC'),
+    radar_id: str = 'KCAE',
+    temp_dir: str = "./files",
+    output_file: str = None
+) -> dict:
+    """
+    Process radar data for a given time range.
+    
+    Args:
+        start: Start time for processing (default: 2023-05-09 19:00 UTC)
+        end: End time for processing (default: 2023-05-10 01:00 UTC)
+        radar_id: Radar station identifier (default: 'KCAE')
+        temp_dir: Directory for temporary files (default: "./files")
+        output_file: Path for output file (default: None)
+    
+    Returns:
+        dict: Dictionary containing hail band information
+    """
     # Set up AWS NEXRAD data access
     conn = nexradaws.NexradAwsInterface()
     scans = conn.get_avail_scans_in_range(start, end, radar_id)
     print(f"Found {len(scans)} scans for {radar_id}")
-    temp_dir="./files"
     results = conn.download(scans, temp_dir)
+    
     # Initialize accumulation grid for MESH
     accumulated_mesh = None
     grid_lat = grid_lon = None
 
-    # Process each radar volume and accumulate max MESH
-    for scan in results.iter_success():
-        # Only process base radar files (exclude any intermediate files if present)
-        if scan.filename.endswith("MDM"):
-            continue
-        print(f"Processing: {scan.filename}")
-        radar = scan.open_pyart()  # read the radar volume
-        mesh_output = process_radar_volume(radar)
-        mesh = mesh_output['mesh_mh2019_75']['data']  # 3D MESH grid (1st level contains 2D field)
-        # Extract latitude/longitude grids on first iteration
-        if accumulated_mesh is None:
-            # Coordinates for the grid based on radar location and x,y offsets
-            # Create grid coordinates (only need to do this once)
-            x = np.linspace(-150000, 150000, 500)
-            y = np.linspace(-150000, 150000, 500)
-            X, Y = np.meshgrid(x, y)
-            radar_lat = radar.latitude['data'][0]
-            radar_lon = radar.longitude['data'][0]
-            # Convert Cartesian (X,Y) to lat-lon (approximate, assuming small earth curvature)
-            grid_lat = radar_lat + (Y / 111000.0)
-            grid_lon = radar_lon + (X / (111000.0 * np.cos(np.radians(radar_lat))))
-            accumulated_mesh = mesh[0]  # initialize with first scan's MESH
-        else:
-            # Update accumulated MESH as the maximum at each grid cell over time
-            accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
-        # Clean up radar object to free memory (if needed)
-        del radar
+    try:
+        # Process each radar volume and accumulate max MESH
+        for scan in results.iter_success():
+            # Only process base radar files (exclude any intermediate files if present)
+            if scan.filename.endswith("MDM"):
+                continue
+            print(f"Processing: {scan.filename}")
+            radar = scan.open_pyart()  # read the radar volume
+            mesh_output = process_radar_volume(radar)
+            mesh = mesh_output['mesh_mh2019_75']['data']  # 3D MESH grid (1st level contains 2D field)
 
-    # Once all scans are processed, compute hail polygons from the accumulated MESH
-    bands = get_hail_bands([accumulated_mesh], grid_lat, grid_lon, min_distance_km=1)
-    # (The 'bands' dict can be used to plot polygons or saved to file as needed)
-    return bands
+            # Extract latitude/longitude grids on first iteration
+            if accumulated_mesh is None:
+                # Coordinates for the grid based on radar location and x,y offsets
+                # Create grid coordinates (only need to do this once)
+                x = np.linspace(-150000, 150000, 500)
+                y = np.linspace(-150000, 150000, 500)
+                X, Y = np.meshgrid(x, y)
+                radar_lat = radar.latitude['data'][0]
+                radar_lon = radar.longitude['data'][0]
+                # Convert Cartesian (X,Y) to lat-lon (approximate, assuming small earth curvature)
+                grid_lat = radar_lat + (Y / 111000.0)
+                grid_lon = radar_lon + (X / (111000.0 * np.cos(np.radians(radar_lat))))
+                # Update accumulated MESH as the maximum at each grid cell over time
+                accumulated_mesh = mesh[0]  # initialize with first scan's MESH
+            else:
+                accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
+            # Clean up radar object to free memory (if needed)
+            del radar
+
+        # Once all scans are processed, compute hail polygons from the accumulated MESH
+        bands = get_hail_bands(
+            [accumulated_mesh], 
+            grid_lat, 
+            grid_lon, 
+            min_distance_km=1,
+            output_file=output_file
+        )
+        return bands
+    except Exception as e:
+        print(f"Error processing time range {start} to {end}: {str(e)}")
+        return None
 
 if __name__ == "__main__":
     hail_bands = main_loop()
-    # For demonstration, print out the bands and their regions
     for size, info in hail_bands.items():
         print(f"\nHail size: {size} (>= {info['threshold_mm']} mm)")
         for i, polygon in enumerate(info['boundary_points'], start=1):
             print(f" Region {i}: {len(polygon)} boundary points")
-            # Example: print first few points
             for pt in polygon[:5]:
                 print(f"  - {pt[0]:.4f}, {pt[1]:.4f}")
             if len(polygon) > 5:
