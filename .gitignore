@@ -2,3 +2,10 @@ venv
 files
 __pycache__
 hail_contours.txt
+
+db_data
+
+processedFiles
+processed_json
+
+docker-compose.yml
