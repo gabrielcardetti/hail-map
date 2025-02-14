@@ -44,35 +44,35 @@ def process_time_range(time_range: tuple[pd.Timestamp, pd.Timestamp]) -> dict:
 
 if __name__ == "__main__":
     # Define the time ranges to process
-    time_ranges = [
-        # Each tuple contains (start_time, end_time) for a processing period
-        (pd.Timestamp(2023, 5, 9, 19, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 21, 59, tz='UTC')),
-        (pd.Timestamp(2023, 5, 9, 22, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 23, 0, tz='UTC')),
-    ]
-
     # time_ranges = [
-    #     # May 2024
-    #     (pd.Timestamp(2024, 5, 8, 0, tz='UTC'), pd.Timestamp(2024, 5, 8, 23, 59, tz='UTC')),
-    #     (pd.Timestamp(2024, 5, 26, 0, tz='UTC'), pd.Timestamp(2024, 5, 26, 23, 59, tz='UTC')),
-        
-    #     # May 2024
-    #     (pd.Timestamp(2024, 5, 6, 0, tz='UTC'), pd.Timestamp(2024, 5, 6, 23, 59, tz='UTC')),
-        
-    #     # September 2024
-    #     (pd.Timestamp(2024, 9, 24, 0, tz='UTC'), pd.Timestamp(2024, 9, 24, 23, 59, tz='UTC')),
-        
-    #     # August 2024
-    #     (pd.Timestamp(2024, 8, 31, 0, tz='UTC'), pd.Timestamp(2024, 8, 31, 23, 59, tz='UTC')),
-        
-    #     # June 2023
-    #     (pd.Timestamp(2023, 6, 6, 0, tz='UTC'), pd.Timestamp(2023, 6, 6, 23, 59, tz='UTC')),
-        
-    #     # May 2023
-    #     (pd.Timestamp(2023, 5, 9, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 23, 59, tz='UTC')),
-        
-    #     # May 2021
-    #     (pd.Timestamp(2021, 5, 3, 0, tz='UTC'), pd.Timestamp(2021, 5, 3, 23, 59, tz='UTC')),
+    #     # Each tuple contains (start_time, end_time) for a processing period
+    #     (pd.Timestamp(2023, 5, 9, 19, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 21, 59, tz='UTC')),
+    #     (pd.Timestamp(2023, 5, 9, 22, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 23, 0, tz='UTC')),
     # ]
+
+    time_ranges = [
+        # May 2024
+        (pd.Timestamp(2024, 5, 8, 0, tz='UTC'), pd.Timestamp(2024, 5, 8, 23, 59, tz='UTC')),
+        (pd.Timestamp(2024, 5, 26, 0, tz='UTC'), pd.Timestamp(2024, 5, 26, 23, 59, tz='UTC')),
+        
+        # May 2024
+        (pd.Timestamp(2024, 5, 6, 0, tz='UTC'), pd.Timestamp(2024, 5, 6, 23, 59, tz='UTC')),
+        
+        # September 2024
+        (pd.Timestamp(2024, 9, 24, 0, tz='UTC'), pd.Timestamp(2024, 9, 24, 23, 59, tz='UTC')),
+        
+        # August 2024
+        (pd.Timestamp(2024, 8, 31, 0, tz='UTC'), pd.Timestamp(2024, 8, 31, 23, 59, tz='UTC')),
+        
+        # June 2023
+        (pd.Timestamp(2023, 6, 6, 0, tz='UTC'), pd.Timestamp(2023, 6, 6, 23, 59, tz='UTC')),
+        
+        # May 2023
+        (pd.Timestamp(2023, 5, 9, 0, tz='UTC'), pd.Timestamp(2023, 5, 9, 23, 59, tz='UTC')),
+        
+        # May 2021
+        (pd.Timestamp(2021, 5, 3, 0, tz='UTC'), pd.Timestamp(2021, 5, 3, 23, 59, tz='UTC')),
+    ]
 
     
     num_cores = max(1, mp.cpu_count() - 1)
