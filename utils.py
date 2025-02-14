@@ -46,65 +46,72 @@ class ProcessedPolygonData(TypedDict):
 HAIL_STYLE_MAP: Dict[int, StyleDict] = {
     19: {  # 0.75 inch
         'fillColor': '#FFF9D5',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#FFF9D5',
         'strokeOpacity': 1,
         'strokeWeight': 1
     },
     25: {  # 1.0 inch
         'fillColor': '#E0EE98',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#E0EE98',
         'strokeOpacity': 1,
         'strokeWeight': 1
     },
     32: {  # 1.25 inch
         'fillColor': '#FFDE27',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#FFDE27',
         'strokeOpacity': 1,
         'strokeWeight': 1
     },
     38: {  # 1.5 inch
         'fillColor': '#FEAE0E',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#FEAE0E',
         'strokeOpacity': 1,
         'strokeWeight': 1.5
     },
     44: {  # 1.75 inch
         'fillColor': '#ED6F2D',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#ED6F2D',
         'strokeOpacity': 1,
         'strokeWeight': 1.5
     },
     51: {  # 2.0 inch
         'fillColor': '#E94025',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#E94025',
         'strokeOpacity': 1,
         'strokeWeight': 2
     },
-    64: {  # 2.5 inch
+    57: {  # 2.25 inch
         'fillColor': '#9C2740',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#9C2740',
-        'strokeOpacity': 0.65,
+        'strokeOpacity': 1,
+        'strokeWeight': 2
+    },
+    64: {  # 2.5 inch
+        'fillColor': '#673A37',
+        'fillOpacity': 0.5,
+        'strokeColor': '#673A37',
+        'strokeOpacity': 1,
         'strokeWeight': 2
     },
     76: {  # 3.0 inch
-        'fillColor': '#673A37',
-        'fillOpacity': 0.45,
-        'strokeColor': '#673A37',
-        'strokeOpacity': 0.65,
+        'fillColor': '#5E41A5',
+        'fillOpacity': 0.5,
+        'strokeColor': '#5E41A5',
+        'strokeOpacity': 1,
         'strokeWeight': 2.5
     },
     102: {  # 5.0+ inch
         'fillColor': '#3F51B5',
         'fillOpacity': 0.5,
         'strokeColor': '#3F51B5',
-        'strokeOpacity': 0.7,
+        'strokeOpacity': 1,
         'strokeWeight': 3
     }
 }
@@ -247,7 +254,7 @@ def compute_circumcircle(p1: LatLng, p2: LatLng, p3: LatLng) -> Tuple[LatLng, fl
     return LatLng(lat=uy, lng=ux), radius
 
 
-def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.012) -> List[LatLng]:
+def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.03) -> List[LatLng]:
     """
     Process polygon coordinates using alpha shape algorithm.
 

@@ -42,9 +42,9 @@ def thresholded_hail_correction(n):
     """
     n = np.asarray(n)
     
-    corrected = np.where(n < 40, np.maximum(n - 15, 0), n)
+    corrected = np.where(n < 40, np.maximum(n - 19, 0), n)
     
-    mask = 15 * (1 - (n - 40) / 30)
+    mask = 19 * (1 - (n - 40) / 30)
     corrected = np.where((n >= 40) & (n < 70), n - mask, corrected)
 
     return corrected

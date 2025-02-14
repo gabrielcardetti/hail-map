@@ -16,6 +16,7 @@ thresholds = {
     "1.5inch": 38,
     "1.75inch": 44,
     "2inch": 51,
+    "2.25inch": 57,
     "2.5inch": 64,
     "3inch":   76,
     "4inch":   102
@@ -47,7 +48,7 @@ def sort_boundary_points(points):
     sorted_indices = np.argsort(angles)
     return points[sorted_indices]
 
-def get_hail_bands(mesh_data, lat, lon, min_distance_km=1, output_file=None):
+def get_hail_bands(mesh_data, lat, lon, min_distance_km=2, output_file=None):
     """
     Calculate hail size bands from MESH data.
     Returns a dict of hail bands with their polygon boundary points.
@@ -154,9 +155,9 @@ def get_local_scans(scans, temp_dir: str) -> list[LocalScan]:
     return local_scans
 
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 20, tz='UTC'),
-    end: pd.Timestamp = pd.Timestamp(2023, 5, 10, 3, tz='UTC'),
-    radar_id: str = 'KCAE',
+    start: pd.Timestamp = pd.Timestamp(2024, 5, 8, 13, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2024, 5, 8, 14, tz='EST'),
+    radar_id: str = 'KGSP',
     temp_dir: str = "./files",
     output_file: str = None
 ) -> dict:
@@ -213,7 +214,7 @@ def main_loop(
                 (scan_lats, scan_lons),
                 scan_mesh,
                 (grid_lat, grid_lon),
-                method='linear',
+                method='nearest',
                 fill_value=0
             )
             
@@ -231,7 +232,7 @@ def main_loop(
                 [grid_mesh],
                 grid_lat,
                 grid_lon,
-                min_distance_km=1,
+                min_distance_km=2,
                 output_file=output_file
             )
             return bands
