@@ -1,11 +1,19 @@
 from fastapi import FastAPI, Query
-from typing import List
+from typing import List, TypedDict
 import json
-from utils import ProcessedPolygonData, LatLng, StyleDict
+from utils import LatLng, StyleDict
 from pipeline import get_connection
+import pandas as pd
+
 
 app = FastAPI()
 
+class ProcessedPolygonData(TypedDict):
+    positions: List[LatLng]
+    style: StyleDict
+    size: int
+    inchSize: float
+    threshold: int
 
 @app.get("/hail", response_model=dict[str, List[ProcessedPolygonData]])
 def read_hail(year: int = Query(2024, description="Year to filter hail data"),
@@ -52,7 +60,7 @@ def read_hail(year: int = Query(2024, description="Year to filter hail data"),
             'positions': positions,
             'style': style,
             'size': region['size'],
-            'inch_size': region['inch_size'],
+            'inchSize': region['inch_size'],
             'threshold': region['threshold']
         }
         processed_regions.append(processed_region)
@@ -95,7 +103,7 @@ def search_hail_regions(
         region['fillOpacity'] = float(region['fillOpacity'])
         region['strokeOpacity'] = float(region['strokeOpacity'])
         region['inchSize'] = float(region['inchSize'])
-        # Format date as YYYYMMDD
-        region['date'] = region['date']
+        # Format date as YYYY-MM-DD
+        region['date'] = pd.to_datetime(region['date']).strftime('%Y-%m-%d')
 
     return {'data': regions}
