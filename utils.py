@@ -91,35 +91,39 @@ HAIL_STYLE_MAP: Dict[int, StyleDict] = {
     },
     51: {  # 2.0 inch
         'fillColor': '#E94025',
-        'fillOpacity': 1,
+        'fillOpacity': 0.5,
         'strokeColor': '#E94025',
         'strokeOpacity': 1,
         'strokeWeight': 2,
         'inch_size': 2.0
     },
-    64: {  # 2.5 inch
+    57: {  # 2.25 inch
         'fillColor': '#9C2740',
-        'fillOpacity': 0.45,
+        'fillOpacity': 0.5,
         'strokeColor': '#9C2740',
-        'strokeOpacity': 0.65,
-        'strokeWeight': 2,
-        'inch_size': 2.5
+        'strokeOpacity': 1,
+        'strokeWeight': 2
+    },
+    64: {  # 2.5 inch
+        'fillColor': '#673A37',
+        'fillOpacity': 0.5,
+        'strokeColor': '#673A37',
+        'strokeOpacity': 1,
+        'strokeWeight': 2
     },
     76: {  # 3.0 inch
-        'fillColor': '#673A37',
-        'fillOpacity': 0.45,
-        'strokeColor': '#673A37',
-        'strokeOpacity': 0.65,
-        'strokeWeight': 2.5,
-        'inch_size': 3.0
+        'fillColor': '#5E41A5',
+        'fillOpacity': 0.5,
+        'strokeColor': '#5E41A5',
+        'strokeOpacity': 1,
+        'strokeWeight': 2.5
     },
     102: {  # 5.0+ inch
         'fillColor': '#3F51B5',
         'fillOpacity': 0.5,
         'strokeColor': '#3F51B5',
-        'strokeOpacity': 0.7,
-        'strokeWeight': 3,
-        'inch_size': 5.0
+        'strokeOpacity': 1,
+        'strokeWeight': 3
     }
 }
 
@@ -147,10 +151,8 @@ def parse_hail_data(data: str) -> List[PolygonData]:
             if current_points:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
-                    style=HAIL_STYLE_MAP[current_threshold or 19],
-                    size=current_threshold or 19,
-                    inch_size=HAIL_STYLE_MAP[current_threshold or 19]['inch_size'],
-                    threshold=current_threshold or 19
+                    style=HAIL_STYLE_MAP[current_threshold or 51],
+                    size=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -164,11 +166,12 @@ def parse_hail_data(data: str) -> List[PolygonData]:
             continue
 
         # Match coordinate lines (e.g. "34.8048,-82.0713")
-        coord_match = re.match(r'^(\d+\.\d+),(-\d+\.\d+)$', trimmed_line)
+        coord_match = re.match(r'^(-?\d+\.\d+),(-?\d+\.\d+)$', trimmed_line)
+
         if coord_match:
             current_points.append(LatLng(
-                lat=float(coord_match.group(1)),
-                lng=float(coord_match.group(2))
+                lat=float(coord_match.group(2)),
+                lng=float(coord_match.group(1))
             ))
             continue
 
@@ -177,10 +180,8 @@ def parse_hail_data(data: str) -> List[PolygonData]:
             if current_points:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
-                    style=HAIL_STYLE_MAP[current_threshold or 19],
-                    size=current_threshold or 19,
-                    inch_size=HAIL_STYLE_MAP[current_threshold or 19]['inch_size'],
-                    threshold=current_threshold or 19
+                    style=HAIL_STYLE_MAP[current_threshold or 51],
+                    size=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -189,10 +190,8 @@ def parse_hail_data(data: str) -> List[PolygonData]:
     if current_points:
         polygons.append(PolygonData(
             coordinates=current_points.copy(),
-            style=HAIL_STYLE_MAP[current_threshold or 19],
-            size=current_threshold or 19,
-            inch_size=HAIL_STYLE_MAP[current_threshold or 19]['inch_size'],
-            threshold=current_threshold or 19
+            style=HAIL_STYLE_MAP[current_threshold or 51],
+            size=current_threshold or 51
         ))
 
     # Sort polygons by size (smallest first)
@@ -266,7 +265,7 @@ def compute_circumcircle(p1: LatLng, p2: LatLng, p3: LatLng) -> Tuple[LatLng, fl
     return LatLng(lat=uy, lng=ux), radius
 
 
-def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.025) -> List[LatLng]:
+def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.03) -> List[LatLng]:
     """
     Process polygon coordinates using alpha shape algorithm.
 

@@ -104,6 +104,8 @@ def main(file_path: str, output_path: str, date: str) -> None:
         # Parse the data
         polygons = parse_hail_data(data)
 
+        print(f'Polygons: {polygons}')
+
         # Process the polygons
         processed_polygons = process_polygons(polygons)
         print(f"\nProcessed {len(processed_polygons)} polygons")
