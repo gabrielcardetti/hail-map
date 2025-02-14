@@ -2,7 +2,6 @@ from collections import defaultdict
 from typing import List, Dict
 from utils import (
     parse_hail_data, 
-    PolygonData, 
     process_polygons, 
     ProcessedPolygonData, 
     HailJSONEncoder
@@ -86,6 +85,8 @@ def main(file_path: str) -> None:
         # Parse the data
         polygons = parse_hail_data(data)
 
+        print(f'Polygons: {polygons}')
+
         # Process the polygons
         processed_polygons = process_polygons(polygons)
         print(f"\nProcessed {len(processed_polygons)} polygons")
@@ -106,5 +107,5 @@ def main(file_path: str) -> None:
 
 if __name__ == "__main__":
     # Example usage
-    file_path = "final.txt"
+    file_path = "hail_contours.txt"
     main(file_path)

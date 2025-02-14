@@ -46,35 +46,35 @@ class ProcessedPolygonData(TypedDict):
 HAIL_STYLE_MAP: Dict[int, StyleDict] = {
     19: {  # 0.75 inch
         'fillColor': '#FFF9D5',
-        'fillOpacity': 0.5,
+        'fillOpacity': 1,
         'strokeColor': '#FFF9D5',
         'strokeOpacity': 1,
         'strokeWeight': 1
     },
     25: {  # 1.0 inch
         'fillColor': '#E0EE98',
-        'fillOpacity': 0.5,
+        'fillOpacity': 1,
         'strokeColor': '#E0EE98',
         'strokeOpacity': 1,
         'strokeWeight': 1
     },
     32: {  # 1.25 inch
         'fillColor': '#FFDE27',
-        'fillOpacity': 0.5,
+        'fillOpacity': 1,
         'strokeColor': '#FFDE27',
         'strokeOpacity': 1,
         'strokeWeight': 1
     },
     38: {  # 1.5 inch
         'fillColor': '#FEAE0E',
-        'fillOpacity': 0.5,
+        'fillOpacity': 1,
         'strokeColor': '#FEAE0E',
         'strokeOpacity': 1,
         'strokeWeight': 1.5
     },
     44: {  # 1.75 inch
         'fillColor': '#ED6F2D',
-        'fillOpacity': 0.5,
+        'fillOpacity': 1,
         'strokeColor': '#ED6F2D',
         'strokeOpacity': 1,
         'strokeWeight': 1.5
@@ -88,7 +88,7 @@ HAIL_STYLE_MAP: Dict[int, StyleDict] = {
     },
     64: {  # 2.5 inch
         'fillColor': '#9C2740',
-        'fillOpacity': 0.45,
+        'fillOpacity': 1,
         'strokeColor': '#9C2740',
         'strokeOpacity': 0.65,
         'strokeWeight': 2
@@ -133,8 +133,8 @@ def parse_hail_data(data: str) -> List[PolygonData]:
             if current_points:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
-                    style=HAIL_STYLE_MAP[current_threshold or 19],
-                    size=current_threshold or 19
+                    style=HAIL_STYLE_MAP[current_threshold or 51],
+                    size=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -148,11 +148,12 @@ def parse_hail_data(data: str) -> List[PolygonData]:
             continue
 
         # Match coordinate lines (e.g. "34.8048,-82.0713")
-        coord_match = re.match(r'^(\d+\.\d+),(-\d+\.\d+)$', trimmed_line)
+        coord_match = re.match(r'^(-?\d+\.\d+),(-?\d+\.\d+)$', trimmed_line)
+
         if coord_match:
             current_points.append(LatLng(
-                lat=float(coord_match.group(1)),
-                lng=float(coord_match.group(2))
+                lat=float(coord_match.group(2)),
+                lng=float(coord_match.group(1))
             ))
             continue
 
@@ -161,8 +162,8 @@ def parse_hail_data(data: str) -> List[PolygonData]:
             if current_points:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
-                    style=HAIL_STYLE_MAP[current_threshold or 19],
-                    size=current_threshold or 19
+                    style=HAIL_STYLE_MAP[current_threshold or 51],
+                    size=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -171,8 +172,8 @@ def parse_hail_data(data: str) -> List[PolygonData]:
     if current_points:
         polygons.append(PolygonData(
             coordinates=current_points.copy(),
-            style=HAIL_STYLE_MAP[current_threshold or 19],
-            size=current_threshold or 19
+            style=HAIL_STYLE_MAP[current_threshold or 51],
+            size=current_threshold or 51
         ))
 
     # Sort polygons by size (smallest first)
@@ -246,7 +247,7 @@ def compute_circumcircle(p1: LatLng, p2: LatLng, p3: LatLng) -> Tuple[LatLng, fl
     return LatLng(lat=uy, lng=ux), radius
 
 
-def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.025) -> List[LatLng]:
+def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.012) -> List[LatLng]:
     """
     Process polygon coordinates using alpha shape algorithm.
 

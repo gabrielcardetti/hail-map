@@ -3,48 +3,37 @@ import pandas as pd
 import pyart
 import nexradaws
 from scipy import ndimage
-from mesh_grid import main as hail_mesh  # Renamed import for clarity
+from mesh_ppi import main as hail_mesh  # Changed from mesh_grid to mesh_ppi
+from scipy.interpolate import griddata
+import os
+from dataclasses import dataclass
+
+# Hail size thresholds (in mm) corresponding to various size bands
+thresholds = {
+    "0.75inch": 19,
+    "1inch": 25,
+    "1.2inch": 32,
+    "1.5inch": 38,
+    "1.75inch": 44,
+    "2inch": 51,
+    "2.5inch": 64,
+    "3inch":   76,
+    "4inch":   102
+}
 
 def get_temperature_levels():
-    """
-    Provide environmental temperature levels for hail algorithm.
-    Returns [freezing_level, negative20C_level] in meters.
-    """
-    # In a real-world scenario, these could be fetched from a sounding or model data.
     freezing_level = 3000   # 0°C level (default 3.2 km, can adjust per environment)
     neg20_level    = 6000   # -20°C level (default 6.5 km)
     return [freezing_level, neg20_level]
 
 def process_radar_volume(radar):
-    """
-    Grid a single radar volume to Cartesian coordinates and compute hail metrics.
-    Returns a dictionary with MESH and related fields.
-    """
-    # Define grid size and extent
-    grid_shape = (20, 500, 500)  # (vertical levels, y, x)
-    grid_limits = ((0, 20000),    # 0 to 20 km altitude
-                   (-150000, 150000),  # y: -150 to +150 km
-                   (-150000, 150000))  # x: -150 to +150 km
-
-    # Use a tighter radius and Cressman weighting to avoid oversmoothing hail cores
-    radar_fields = ['reflectivity']
-    grid = pyart.map.grid_from_radars(
-        (radar,),
-        grid_shape=grid_shape,
-        grid_limits=grid_limits,
-        fields=radar_fields,
-        weighting_function="Cressman",
-        constant_roi=1000.0,         # 1 km radius of influence for interpolation
-        roi_func='constant'          # use constant radius (override default dist_beam)
-    )
-    # Get environmental levels and compute hail fields (MESH, POSH, etc.)
+    # Get environmental levels
     levels = get_temperature_levels()
+    # Apply MESH calculation directly on PPI data
     mesh_data = hail_mesh(
-        grid=grid,
-        dbz_fname='reflectivity',
-        levels=levels,
-        radar_band='S',         # NEXRAD is S-band radar
-        mesh_method='mh2019_75' # use modern calibration for MESH (75th percentile)
+        radar,
+        'reflectivity',
+        levels,
     )
     return mesh_data
 
@@ -70,18 +59,6 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=1, output_file=None):
         min_distance_km: controls the gap closure for polygon merging
         output_file: path to output file (optional)
     """
-    # Hail size thresholds (in mm) corresponding to various size bands
-    thresholds = {
-        "0.75inch": 19,
-        "1inch": 25,
-        "1.2inch": 32,
-        "1.5inch": 38,
-        "1.75inch": 44,
-        "2inch": 51,
-        "2.5inch": 64,
-        "3inch":   76,
-        "4inch":   102
-    }
 
     # Modify file opening to use the output_file parameter
     if output_file:
@@ -147,9 +124,38 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=1, output_file=None):
     finally:
         f.close()
 
+@dataclass
+class LocalScan:
+    filename: str
+    filepath: str
+    
+    def open_pyart(self):
+        return pyart.io.read(self.filepath)
+
+def get_local_scans(scans, temp_dir: str) -> list[LocalScan]:
+    local_scans = []
+    scans_to_download = []
+    
+    # Check which files need to be downloaded
+    for scan in scans:
+        local_path = os.path.join(temp_dir, scan.filename)
+        if os.path.exists(local_path):
+            local_scans.append(LocalScan(scan.filename, local_path))
+        else:
+            scans_to_download.append(scan)
+    
+    print(f"Found {len(local_scans)} existing files")
+    if scans_to_download:
+        print(f"Downloading {len(scans_to_download)} new files")
+        conn = nexradaws.NexradAwsInterface()
+        results = conn.download(scans_to_download, temp_dir)
+        local_scans.extend([LocalScan(scan.filename, scan.filepath) for scan in results.iter_success()])
+    
+    return local_scans
+
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 19, tz='UTC'),
-    end: pd.Timestamp = pd.Timestamp(2023, 5, 10, 1, tz='UTC'),
+    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 20, tz='UTC'),
+    end: pd.Timestamp = pd.Timestamp(2023, 5, 10, 3, tz='UTC'),
     radar_id: str = 'KCAE',
     temp_dir: str = "./files",
     output_file: str = None
@@ -167,57 +173,76 @@ def main_loop(
     Returns:
         dict: Dictionary containing hail band information
     """
-    # Set up AWS NEXRAD data access
+    # Set up AWS NEXRAD data access and get available scans
     conn = nexradaws.NexradAwsInterface()
     scans = conn.get_avail_scans_in_range(start, end, radar_id)
     print(f"Found {len(scans)} scans for {radar_id}")
-    results = conn.download(scans, temp_dir)
     
-    # Initialize accumulation grid for MESH
-    accumulated_mesh = None
+    # Get local scans, downloading if necessary
+    local_scans = get_local_scans(scans, temp_dir)
+    
+    # Initialize the accumulation grid on first scan
+    grid_mesh = None
     grid_lat = grid_lon = None
-
+    
     try:
         # Process each radar volume and accumulate max MESH
-        for scan in results.iter_success():
-            # Only process base radar files (exclude any intermediate files if present)
+        for scan in local_scans:
             if scan.filename.endswith("MDM"):
                 continue
+                
             print(f"Processing: {scan.filename}")
-            radar = scan.open_pyart()  # read the radar volume
-            mesh_output = process_radar_volume(radar)
-            mesh = mesh_output['mesh_mh2019_75']['data']  # 3D MESH grid (1st level contains 2D field)
-
-            # Extract latitude/longitude grids on first iteration
-            if accumulated_mesh is None:
-                # Coordinates for the grid based on radar location and x,y offsets
-                # Create grid coordinates (only need to do this once)
-                x = np.linspace(-150000, 150000, 500)
-                y = np.linspace(-150000, 150000, 500)
-                X, Y = np.meshgrid(x, y)
-                radar_lat = radar.latitude['data'][0]
-                radar_lon = radar.longitude['data'][0]
-                # Convert Cartesian (X,Y) to lat-lon (approximate, assuming small earth curvature)
-                grid_lat = radar_lat + (Y / 111000.0)
-                grid_lon = radar_lon + (X / (111000.0 * np.cos(np.radians(radar_lat))))
-                # Update accumulated MESH as the maximum at each grid cell over time
-                accumulated_mesh = mesh[0]  # initialize with first scan's MESH
-            else:
-                accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
-            # Clean up radar object to free memory (if needed)
-            del radar
-
-        # Once all scans are processed, compute hail polygons from the accumulated MESH
-        bands = get_hail_bands(
-            [accumulated_mesh], 
-            grid_lat, 
-            grid_lon, 
-            min_distance_km=1,
-            output_file=output_file
-        )
-        return bands
+            radar = scan.open_pyart()
+            scan_mesh_points = process_radar_volume(radar)
+            
+            # Get points from this scan
+            scan_lats = np.array([p['lat'] for p in scan_mesh_points])
+            scan_lons = np.array([p['lon'] for p in scan_mesh_points])
+            scan_mesh = np.array([p['mesh_value'] for p in scan_mesh_points])
+            
+            # Create or reuse grid
+            if grid_mesh is None:
+                # Initialize grid on first scan
+                lat_min, lat_max = np.min(scan_lats), np.max(scan_lats)
+                lon_min, lon_max = np.min(scan_lons), np.max(scan_lons)
+                grid_lat, grid_lon = np.mgrid[lat_min:lat_max:500j, lon_min:lon_max:500j]
+                grid_mesh = np.zeros_like(grid_lat)
+            
+            # Interpolate this scan's MESH values to grid
+            scan_grid = griddata(
+                (scan_lats, scan_lons),
+                scan_mesh,
+                (grid_lat, grid_lon),
+                method='linear',
+                fill_value=0
+            )
+            
+            # Update accumulation grid with maximum values
+            grid_mesh = np.maximum(grid_mesh, scan_grid)
+            
+            print(f"Ending: {scan.filename}")
+            print("-" * 40)
+            
+            del radar, scan_grid
+            
+        if grid_mesh is not None:
+            # Process accumulated MESH into hail bands
+            bands = get_hail_bands(
+                [grid_mesh],
+                grid_lat,
+                grid_lon,
+                min_distance_km=1,
+                output_file=output_file
+            )
+            return bands
+            
     except Exception as e:
-        print(f"Error processing time range {start} to {end}: {str(e)}")
+        import traceback
+        print(f"Error processing time range {start} to {end}")
+        print(f"Error type: {type(e).__name__}")
+        print(f"Error message: {str(e)}")
+        print("\nFull traceback:")
+        traceback.print_exc()
         return None
 
 if __name__ == "__main__":
