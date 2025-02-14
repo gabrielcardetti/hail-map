@@ -102,28 +102,32 @@ HAIL_STYLE_MAP: Dict[int, StyleDict] = {
         'fillOpacity': 0.5,
         'strokeColor': '#9C2740',
         'strokeOpacity': 1,
-        'strokeWeight': 2
+        'strokeWeight': 2,
+        'inch_size': 2.25
     },
     64: {  # 2.5 inch
         'fillColor': '#673A37',
         'fillOpacity': 0.5,
         'strokeColor': '#673A37',
         'strokeOpacity': 1,
-        'strokeWeight': 2
+        'strokeWeight': 2,
+        'inch_size': 2.5
     },
     76: {  # 3.0 inch
         'fillColor': '#5E41A5',
         'fillOpacity': 0.5,
         'strokeColor': '#5E41A5',
         'strokeOpacity': 1,
-        'strokeWeight': 2.5
+        'strokeWeight': 2.5,
+        'inch_size': 3.0
     },
     102: {  # 5.0+ inch
         'fillColor': '#3F51B5',
         'fillOpacity': 0.5,
         'strokeColor': '#3F51B5',
         'strokeOpacity': 1,
-        'strokeWeight': 3
+        'strokeWeight': 3,
+        'inch_size': 5.0
     }
 }
 
@@ -152,7 +156,9 @@ def parse_hail_data(data: str) -> List[PolygonData]:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
                     style=HAIL_STYLE_MAP[current_threshold or 51],
-                    size=current_threshold or 51
+                    size=current_threshold or 51,
+                    inch_size=HAIL_STYLE_MAP[current_threshold or 51]['inch_size'],
+                    threshold=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -181,7 +187,9 @@ def parse_hail_data(data: str) -> List[PolygonData]:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
                     style=HAIL_STYLE_MAP[current_threshold or 51],
-                    size=current_threshold or 51
+                    size=current_threshold or 51,
+                    inch_size=HAIL_STYLE_MAP[current_threshold or 51]['inch_size'],
+                    threshold=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -191,7 +199,9 @@ def parse_hail_data(data: str) -> List[PolygonData]:
         polygons.append(PolygonData(
             coordinates=current_points.copy(),
             style=HAIL_STYLE_MAP[current_threshold or 51],
-            size=current_threshold or 51
+            size=current_threshold or 51,
+            inch_size=HAIL_STYLE_MAP[current_threshold or 51]['inch_size'],
+            threshold=current_threshold or 51
         ))
 
     # Sort polygons by size (smallest first)

@@ -8,12 +8,14 @@ import pandas as pd
 
 app = FastAPI()
 
+
 class ProcessedPolygonData(TypedDict):
     positions: List[LatLng]
     style: StyleDict
     size: int
     inchSize: float
     threshold: int
+
 
 @app.get("/hail", response_model=dict[str, List[ProcessedPolygonData]])
 def read_hail(year: int = Query(2024, description="Year to filter hail data"),
@@ -70,8 +72,10 @@ def read_hail(year: int = Query(2024, description="Year to filter hail data"),
 
 @app.get("/hail/search")
 def search_hail_regions(
-    lat: float = Query(32.78689956665039, description="Latitude of the point to search"),
-    lng: float = Query(-82.07479858398438, description="Longitude of the point to search")
+    lat: float = Query(32.78689956665039,
+                       description="Latitude of the point to search"),
+    lng: float = Query(-82.07479858398438,
+                       description="Longitude of the point to search")
 ):
     connection = get_connection()
     cursor = connection.cursor(dictionary=True)
@@ -97,13 +101,21 @@ def search_hail_regions(
     """, (f'POINT({lng} {lat})',))
 
     regions = cursor.fetchall()
-    
-    # Convert decimal values to float for JSON serialization
+
+    # Group by date and keep only the largest inch_size
+    date_grouped = {}
     for region in regions:
+        date = region['date']
+        if date not in date_grouped or region['inchSize'] > date_grouped[date]['inchSize']:
+            date_grouped[date] = region
+
+    # Convert decimal values to float for JSON serialization
+    regions = []
+    for region in date_grouped.values():
         region['fillOpacity'] = float(region['fillOpacity'])
         region['strokeOpacity'] = float(region['strokeOpacity'])
         region['inchSize'] = float(region['inchSize'])
-        # Format date as YYYY-MM-DD
         region['date'] = pd.to_datetime(region['date']).strftime('%Y-%m-%d')
+        regions.append(region)
 
     return {'data': regions}
