@@ -4,6 +4,7 @@ import pyart
 import nexradaws
 from scipy import ndimage
 from mesh_grid import main as hail_mesh  # Renamed import for clarity
+import time
 
 def get_temperature_levels():
     """
@@ -181,8 +182,10 @@ def main_loop(
         # Process each radar volume and accumulate max MESH
         for scan in results.iter_success():
             # Only process base radar files (exclude any intermediate files if present)
+
             if scan.filename.endswith("MDM"):
                 continue
+            start_time = time.time()
             print(f"Processing: {scan.filename}")
             radar = scan.open_pyart()  # read the radar volume
             mesh_output = process_radar_volume(radar)
@@ -206,6 +209,8 @@ def main_loop(
                 accumulated_mesh = np.maximum(accumulated_mesh, mesh[0])
             # Clean up radar object to free memory (if needed)
             del radar
+            print(f"Finsihed: {scan.filename} on {time.time() - start_time:.2f} seconds")
+
 
         # Once all scans are processed, compute hail polygons from the accumulated MESH
         bands = get_hail_bands(
