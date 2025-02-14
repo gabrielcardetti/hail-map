@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 class HailJSONEncoder(json.JSONEncoder):
     """Custom JSON encoder for hail data classes."""
+
     def default(self, obj):
         if isinstance(obj, LatLng):
             return {'lat': obj.lat, 'lng': obj.lng}
@@ -34,12 +35,16 @@ class PolygonData:
     coordinates: List[LatLng]
     style: StyleDict
     size: int
+    inch_size: float
+    threshold: int
 
 
 class ProcessedPolygonData(TypedDict):
     positions: List[LatLng]
     style: StyleDict
     size: int
+    inch_size: float
+    threshold: int
 
 
 # Constants
@@ -49,70 +54,80 @@ HAIL_STYLE_MAP: Dict[int, StyleDict] = {
         'fillOpacity': 0.5,
         'strokeColor': '#FFF9D5',
         'strokeOpacity': 1,
-        'strokeWeight': 1
+        'strokeWeight': 1,
+        'inch_size': 0.75
     },
     25: {  # 1.0 inch
         'fillColor': '#E0EE98',
         'fillOpacity': 0.5,
         'strokeColor': '#E0EE98',
         'strokeOpacity': 1,
-        'strokeWeight': 1
+        'strokeWeight': 1,
+        'inch_size': 1.0
     },
     32: {  # 1.25 inch
         'fillColor': '#FFDE27',
         'fillOpacity': 0.5,
         'strokeColor': '#FFDE27',
         'strokeOpacity': 1,
-        'strokeWeight': 1
+        'strokeWeight': 1,
+        'inch_size': 1.25
     },
     38: {  # 1.5 inch
         'fillColor': '#FEAE0E',
         'fillOpacity': 0.5,
         'strokeColor': '#FEAE0E',
         'strokeOpacity': 1,
-        'strokeWeight': 1.5
+        'strokeWeight': 1.5,
+        'inch_size': 1.5
     },
     44: {  # 1.75 inch
         'fillColor': '#ED6F2D',
         'fillOpacity': 0.5,
         'strokeColor': '#ED6F2D',
         'strokeOpacity': 1,
-        'strokeWeight': 1.5
+        'strokeWeight': 1.5,
+        'inch_size': 1.75
     },
     51: {  # 2.0 inch
         'fillColor': '#E94025',
         'fillOpacity': 0.5,
         'strokeColor': '#E94025',
         'strokeOpacity': 1,
-        'strokeWeight': 2
+        'strokeWeight': 2,
+        'inch_size': 2.0
     },
     57: {  # 2.25 inch
         'fillColor': '#9C2740',
         'fillOpacity': 0.5,
         'strokeColor': '#9C2740',
         'strokeOpacity': 1,
-        'strokeWeight': 2
+        'strokeWeight': 2,
+        'inch_size': 2.25
     },
     64: {  # 2.5 inch
         'fillColor': '#673A37',
         'fillOpacity': 0.5,
         'strokeColor': '#673A37',
         'strokeOpacity': 1,
-        'strokeWeight': 2
+        'strokeWeight': 2,
+        'inch_size': 2.5
     },
     76: {  # 3.0 inch
         'fillColor': '#5E41A5',
         'fillOpacity': 0.5,
         'strokeColor': '#5E41A5',
         'strokeOpacity': 1,
-        'strokeWeight': 2.5
+        'strokeWeight': 2.5,
+        'inch_size': 3.0
     },
     102: {  # 5.0+ inch
         'fillColor': '#3F51B5',
         'fillOpacity': 0.5,
         'strokeColor': '#3F51B5',
         'strokeOpacity': 1,
-        'strokeWeight': 3
+        'strokeWeight': 3,
+        'inch_size': 5.0
     }
 }
 
@@ -141,7 +156,9 @@ def parse_hail_data(data: str) -> List[PolygonData]:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
                     style=HAIL_STYLE_MAP[current_threshold or 51],
-                    size=current_threshold or 51
+                    size=current_threshold or 51,
+                    inch_size=HAIL_STYLE_MAP[current_threshold or 51]['inch_size'],
+                    threshold=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -170,7 +187,9 @@ def parse_hail_data(data: str) -> List[PolygonData]:
                 polygons.append(PolygonData(
                     coordinates=current_points.copy(),
                     style=HAIL_STYLE_MAP[current_threshold or 51],
-                    size=current_threshold or 51
+                    size=current_threshold or 51,
+                    inch_size=HAIL_STYLE_MAP[current_threshold or 51]['inch_size'],
+                    threshold=current_threshold or 51
                 ))
                 current_points = []
             continue
@@ -180,7 +199,9 @@ def parse_hail_data(data: str) -> List[PolygonData]:
         polygons.append(PolygonData(
             coordinates=current_points.copy(),
             style=HAIL_STYLE_MAP[current_threshold or 51],
-            size=current_threshold or 51
+            size=current_threshold or 51,
+            inch_size=HAIL_STYLE_MAP[current_threshold or 51]['inch_size'],
+            threshold=current_threshold or 51
         ))
 
     # Sort polygons by size (smallest first)
@@ -373,5 +394,7 @@ def process_polygons(polygons: List[PolygonData]) -> List[ProcessedPolygonData]:
     return [{
         'positions': process_polygon_coordinates(polygon.coordinates),
         'style': polygon.style,
-        'size': polygon.size
+        'size': polygon.size,
+        'inch_size': polygon.inch_size,
+        'threshold': polygon.threshold
     } for polygon in polygons]
