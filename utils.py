@@ -254,7 +254,7 @@ def compute_circumcircle(p1: LatLng, p2: LatLng, p3: LatLng) -> Tuple[LatLng, fl
     return LatLng(lat=uy, lng=ux), radius
 
 
-def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.03) -> List[LatLng]:
+def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.035) -> List[LatLng]:
     """
     Process polygon coordinates using alpha shape algorithm.
 

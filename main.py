@@ -37,6 +37,8 @@ def process_radar_volume(radar):
         'reflectivity',
         levels,
     )
+    if mesh_data is None:
+        return None
     return mesh_data
 
 def sort_boundary_points(points):
@@ -156,9 +158,9 @@ def get_local_scans(scans, temp_dir: str) -> list[LocalScan]:
     return local_scans
 
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2024, 5, 8, 13, tz='EST'),
-    end: pd.Timestamp = pd.Timestamp(2024, 5, 8, 14, tz='EST'),
-    radar_id: str = 'KGSP',
+    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 17, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2023, 5, 9, 21, tz='EST'),
+    radar_id: str = 'KCAE',
     temp_dir: str = "./files",
     output_file: str = None
 ) -> dict:
@@ -198,6 +200,8 @@ def main_loop(
             print(f"Processing: {scan.filename} ({idx}/{total_files})")
             radar = scan.open_pyart()
             scan_mesh_points = process_radar_volume(radar)
+            if scan_mesh_points is None:
+                continue
             
             # Get points from this scan
             scan_lats = np.array([p['lat'] for p in scan_mesh_points])

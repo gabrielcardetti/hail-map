@@ -345,23 +345,16 @@ def ppi_calc(
 
     # require more than one sweep
     if len(elevation_dataset) <= minimum_sweeps_raise_expection:
-        raise RuntimeError(
-            f"Require more than {minimum_sweeps_raise_expection} sweeps to calculate MESH"
-        )
+        print(f"Warning: Skipping scan - requires more than {minimum_sweeps_raise_expection} sweeps to calculate MESH")
+        return None
     elif len(elevation_dataset) < minimum_sweeps_raise_warning:
-        raise Warning(
-            (
-                f"Number of sweep is less than {minimum_sweeps_raise_warning} "
-                "and not recommended for MESH calculations"
-            )
-        )
+        print(f"Warning: Number of sweeps ({len(elevation_dataset)}) is less than {minimum_sweeps_raise_warning}")
+
     # sweep must be sorted from lowest to highest elevation
     dx = np.diff(elevation_dataset)
     if np.all(dx <= 0):
-        raise RuntimeError(
-            "Datasets have not been sorted so sweeps are increasing monotonically"
-        )
-
+        print("Warning: Skipping scan - sweeps are not sorted in increasing monotonic order")
+        return None
 
     # Initialize sweep coords
     sweep0_nbins = len(range_dataset[0])
