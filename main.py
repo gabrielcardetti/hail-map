@@ -7,6 +7,7 @@ from mesh_ppi import main as hail_mesh  # Changed from mesh_grid to mesh_ppi
 from scipy.interpolate import griddata
 import os
 from dataclasses import dataclass
+import time
 
 # Hail size thresholds (in mm) corresponding to various size bands
 thresholds = {
@@ -188,11 +189,13 @@ def main_loop(
     
     try:
         # Process each radar volume and accumulate max MESH
-        for scan in local_scans:
+        total_files = len(local_scans)
+        for idx, scan in enumerate(local_scans, 1):
             if scan.filename.endswith("MDM"):
                 continue
                 
-            print(f"Processing: {scan.filename}")
+            start_time = time.time()
+            print(f"Processing: {scan.filename} ({idx}/{total_files})")
             radar = scan.open_pyart()
             scan_mesh_points = process_radar_volume(radar)
             
@@ -221,8 +224,8 @@ def main_loop(
             # Update accumulation grid with maximum values
             grid_mesh = np.maximum(grid_mesh, scan_grid)
             
-            print(f"Ending: {scan.filename}")
-            print("-" * 40)
+            print(f"Finsihed: {scan.filename} on {time.time() - start_time:.2f} seconds")
+            # print("-" * 40)
             
             del radar, scan_grid
             

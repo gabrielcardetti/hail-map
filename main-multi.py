@@ -4,6 +4,7 @@ from main import (
     main_loop
 )
 import os
+import time
 
 def process_time_range(time_range: tuple[pd.Timestamp, pd.Timestamp]) -> dict:
     """
@@ -12,6 +13,7 @@ def process_time_range(time_range: tuple[pd.Timestamp, pd.Timestamp]) -> dict:
     Args:
         time_range (tuple): Tuple containing (start_time, end_time) as pd.Timestamp objects
     """
+    range_start_time = time.time()
     start_time, end_time = time_range
     radar_id = 'KCAE'
     
@@ -29,13 +31,16 @@ def process_time_range(time_range: tuple[pd.Timestamp, pd.Timestamp]) -> dict:
     print(f"\nProcessing period: {start_time} to {end_time}")
     
     # Call main processing function with all necessary parameters
-    return main_loop(
+    result =  main_loop(
         start=start_time,
         end=end_time,
         radar_id=radar_id,
         temp_dir=temp_dir,
         output_file=output_file
     )
+    total_range_time = time.time() - range_start_time
+    print(f"✓ Successfully processed period: {time_range[0]} to {time_range[1]} it takes {total_range_time:.2f} seconds")
+    return result
 
 if __name__ == "__main__":
     # Define the time ranges to process
@@ -81,7 +86,5 @@ if __name__ == "__main__":
 
     # Process results
     for time_range, result in zip(time_ranges, results):
-        if result is not None:
-            print(f"✓ Successfully processed period: {time_range[0]} to {time_range[1]}")
-        else:
+        if result is None:
             print(f"✗ Failed to process period: {time_range[0]} to {time_range[1]}")
