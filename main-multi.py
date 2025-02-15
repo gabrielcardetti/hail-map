@@ -181,8 +181,6 @@ if __name__ == "__main__":
         (2024, 7, 14),
         (2024, 7, 17),
         (2024, 7, 21),
-        (2024, 8, 22),
-        (2024, 8, 27)
     ]
     for month in range(1, 13):  # 1 = January, 12 = December
         # Get the number of days in the month
