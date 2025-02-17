@@ -8,7 +8,7 @@ from utils import (
     HailJSONEncoder
 )
 import json
-
+from datetime import datetime
 import mysql.connector
 
 host = "localhost"
@@ -87,7 +87,7 @@ def print_summary(summary: Dict) -> None:
         print(f"  {size}mm ({size/25.4:.2f} inches): {count} regions")
 
 
-def main(file_path: str, output_path: str, date: str) -> None:
+def main(file_path: str, output_path: str, date: datetime) -> None:
     """
     Main function to process hail contour data file.
 
@@ -104,19 +104,18 @@ def main(file_path: str, output_path: str, date: str) -> None:
         # Parse the data
         polygons = parse_hail_data(data)
 
-        print(f'Polygons: {polygons}')
+        print(f'processing polygon from {file_path} for date {date}')
 
         # Process the polygons
         processed_polygons = process_polygons(polygons)
-        print(f"\nProcessed {len(processed_polygons)} polygons")
 
         # save processed_polygons as a .json file
         with open(output_path, 'w') as f:
             json.dump(processed_polygons, f, cls=HailJSONEncoder, indent=2)
 
-        # Generate and print summary
-        summary = summarize_hail_data(polygons)
-        print_summary(summary)
+        # # Generate and print summary
+        # summary = summarize_hail_data(polygons)
+        # print_summary(summary)
 
         # insert the polygons into the database
         insert_polygons(processed_polygons, date)
@@ -129,7 +128,7 @@ def main(file_path: str, output_path: str, date: str) -> None:
         print(f"Error processing file: {str(e)}")
 
 
-def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
+def insert_polygons(polygons: List[ProcessedPolygonData], date: datetime) -> None:
     """
     Insert processed hail polygons into the database.
     This function handles both the hail region polygons and their constituent points.
@@ -138,7 +137,7 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
     Args:
         polygons: List of ProcessedPolygonData objects containing polygon information
                  Each polygon has positions (points), style information, and size data
-        date: Date string in YYYYMMDD format representing when the hail data was recorded
+        date: Date object representing when the hail data was recorded
 
     The function performs the following steps for each polygon:
     1. Validates the polygon has enough points
@@ -155,19 +154,20 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
             # Validation Step 1: Check minimum points requirement
             # A valid polygon needs at least 3 points to form an area
             if not polygon['positions'] or len(polygon['positions']) < 3:
-                print(f"Skipping polygon with insufficient points: {len(polygon['positions']) if polygon['positions'] else 0} points")
+                print(
+                    f"Skipping polygon with insufficient points: {len(polygon['positions']) if polygon['positions'] else 0} points")
                 continue
 
             # Step 2: Prepare polygon data
             # Convert LatLng objects to (longitude, latitude) pairs
             # Note: MySQL expects longitude first in spatial functions
             points = [(pos.lng, pos.lat) for pos in polygon['positions']]
-            
+
             # Ensure the polygon is closed (first point equals last point)
             # This is required for valid polygon geometry in MySQL
             if points[0] != points[-1]:
                 points.append(points[0])
-            
+
             # Create Well-Known Text (WKT) representation of the polygon
             # Format: POLYGON((lng1 lat1, lng2 lat2, ...))
             points_str = ','.join(f'{lng} {lat}' for lng, lat in points)
@@ -181,7 +181,7 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
                         ST_IsValid(ST_GeomFromText(%s, 4326)) as is_valid,
                         ST_NumPoints(ST_GeomFromText(%s, 4326)) as num_points
                 """, (polygon_wkt, polygon_wkt))
-                
+
                 validation_result = cursor.fetchone()
                 is_valid, num_points = validation_result
 
@@ -190,29 +190,32 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
                     print(f"- Number of points: {len(points)}")
                     print(f"- First few points: {points[:3]}")
                     print(f"- Last few points: {points[-3:]}")
-                    print(f"- Size: {polygon['size']}mm ({polygon['inch_size']} inches)")
+                    print(
+                        f"- Size: {polygon['size']}mm ({polygon['inch_size']} inches)")
                     print(f"- Threshold: {polygon['threshold']}")
-                    
+
                     # Check for potential data issues
                     has_duplicate_points = len(set(points)) != len(points)
-                    has_invalid_coords = any(not (-180 <= lng <= 180 and -90 <= lat <= 90) 
-                                          for lng, lat in points)
-                    
+                    has_invalid_coords = any(not (-180 <= lng <= 180 and -90 <= lat <= 90)
+                                             for lng, lat in points)
+
                     print("\nValidation checks:")
                     print(f"- Has duplicate points: {has_duplicate_points}")
                     print(f"- Has invalid coordinates: {has_invalid_coords}")
                     print(f"- Is closed polygon: {points[0] == points[-1]}")
-                    
+
                     # Print the full WKT for inspection
                     print("\nFull WKT representation:")
                     print(polygon_wkt)
-                    
+
                     # Try to identify any coordinate patterns
                     lngs, lats = zip(*points)
                     print("\nCoordinate ranges:")
-                    print(f"- Longitude range: {min(lngs):.4f} to {max(lngs):.4f}")
-                    print(f"- Latitude range: {min(lats):.4f} to {max(lats):.4f}")
-                    
+                    print(
+                        f"- Longitude range: {min(lngs):.4f} to {max(lngs):.4f}")
+                    print(
+                        f"- Latitude range: {min(lats):.4f} to {max(lats):.4f}")
+
                     # Try simpler geometry first
                     try:
                         # Try creating a point to verify basic spatial operations
@@ -223,8 +226,9 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
                         """, (f'POINT({points[0][0]} {points[0][1]})',))
                         point_result = cursor.fetchone()[0]
                         print("\nBasic spatial operation test:")
-                        print(f"- Point creation successful: {bool(point_result)}")
-                        
+                        print(
+                            f"- Point creation successful: {bool(point_result)}")
+
                         # Try to fix the polygon
                         cursor.execute("""
                             SELECT ST_AsText(
@@ -232,11 +236,11 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
                             )
                         """, (polygon_wkt,))
                         fixed_wkt = cursor.fetchone()[0]
-                        
+
                         if fixed_wkt and fixed_wkt.startswith('POLYGON'):
                             print("\nPolygon fix attempt:")
                             print("- Successfully fixed polygon using convex hull")
-                            print(f"- Fixed WKT preview: {fixed_wkt[:100]}...")
+                            # print(f"- Fixed WKT preview: {fixed_wkt[:100]}...")
                             polygon_wkt = fixed_wkt
                         else:
                             print("\nPolygon fix attempt:")
@@ -293,8 +297,8 @@ def insert_polygons(polygons: List[ProcessedPolygonData], date: str) -> None:
                 ]
 
                 cursor.executemany(points_query, points_values)
-                print(f"Successfully inserted polygon with {len(points)} points")
-                
+                # print(f"Successfully inserted polygon with {len(points)} points")
+
             except mysql.connector.Error as error:
                 print(f"Failed to insert polygon: {error}")
                 print(f"Polygon WKT preview: {polygon_wkt[:100]}...")
@@ -329,7 +333,7 @@ def create_tables() -> None:
             CREATE TABLE IF NOT EXISTS hail_region (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                date VARCHAR(50) NOT NULL,
+                date DATE NOT NULL,
                 fill_color VARCHAR(50) NOT NULL,
                 fill_opacity FLOAT NOT NULL,
                 stroke_color VARCHAR(50) NOT NULL,
@@ -339,7 +343,9 @@ def create_tables() -> None:
                 inch_size FLOAT NOT NULL,
                 threshold INT NOT NULL,
                 region POLYGON NOT NULL SRID 4326,
-                SPATIAL INDEX(region)
+                SPATIAL INDEX(region),
+                INDEX idx_date (date),
+                INDEX idx_date_inch_size (date, inch_size)
             )
         """)
 
@@ -383,8 +389,8 @@ if __name__ == "__main__":
     import os
     from pathlib import Path
 
-    # clean_tables()
-    create_tables()
+    clean_tables()
+    # create_tables()
 
     # Process all files in the @processedFiles folder
     input_folder = "./processedFiles"
@@ -396,9 +402,10 @@ if __name__ == "__main__":
     for file_name in os.listdir(input_folder):
         if file_name.endswith('.txt'):
             input_path = os.path.join(input_folder, file_name)
-            # hail_contours_20240924_0000.txt
+            # hail_contours_KCAE_20210503_0000.txt
             # get date from name
-            date = file_name.split("_")[2]
+            date = file_name.split("_")[3]
+            date = datetime.strptime(date, "%Y%m%d")
 
             # Create output path with same name but .json extension
             output_path = os.path.join(
