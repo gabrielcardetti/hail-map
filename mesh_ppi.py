@@ -274,7 +274,7 @@ def ppi_calc(
     levels,
     radar_band="S",
     min_range=10,
-    max_range=180,
+    max_range=150,
     mesh_method="mh2019_75",
     correct_cband_refl=True,
     minimum_sweeps_raise_expection=4,
