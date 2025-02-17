@@ -221,7 +221,7 @@ def main_loop(
                 (scan_lats, scan_lons),
                 scan_mesh,
                 (grid_lat, grid_lon),
-                method='nearest',
+                method='linear',
                 fill_value=0
             )
             
