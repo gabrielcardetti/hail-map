@@ -8,6 +8,7 @@ from scipy.interpolate import griddata
 import os
 from dataclasses import dataclass
 import time
+from typing import List
 
 # Hail size thresholds (in mm) corresponding to various size bands
 thresholds = {
@@ -157,82 +158,124 @@ def get_local_scans(scans, temp_dir: str) -> list[LocalScan]:
     
     return local_scans
 
+def get_grid_bounds(scan_lats: np.ndarray, scan_lons: np.ndarray, grid_bounds=None):
+    """
+    Calculate or update grid bounds based on scan data.
+    
+    Args:
+        scan_lats: Latitude points from current scan
+        scan_lons: Longitude points from current scan
+        grid_bounds: Optional existing bounds (min_lat, max_lat, min_lon, max_lon)
+    
+    Returns:
+        Tuple of (min_lat, max_lat, min_lon, max_lon)
+    """
+    lat_min, lat_max = np.min(scan_lats), np.max(scan_lats)
+    lon_min, lon_max = np.min(scan_lons), np.max(scan_lons)
+    
+    if grid_bounds is None:
+        return (lat_min, lat_max, lon_min, lon_max)
+        
+    return (
+        min(grid_bounds[0], lat_min),
+        max(grid_bounds[1], lat_max),
+        min(grid_bounds[2], lon_min),
+        max(grid_bounds[3], lon_max)
+    )
+
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 17, tz='EST'),
-    end: pd.Timestamp = pd.Timestamp(2023, 5, 9, 21, tz='EST'),
-    radar_id: str = 'KCAE',
+    start: pd.Timestamp = pd.Timestamp(2024, 5, 8, 10, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2024, 5, 8, 14, tz='EST'),
+    radar_ids: List[str] = ['KCAE'],
     temp_dir: str = "./files",
     output_file: str = None
 ) -> dict:
     """
-    Process radar data for a given time range.
+    Process radar data for multiple radars over a given time range.
     
     Args:
-        start: Start time for processing (default: 2023-05-09 19:00 UTC)
-        end: End time for processing (default: 2023-05-10 01:00 UTC)
-        radar_id: Radar station identifier (default: 'KCAE')
-        temp_dir: Directory for temporary files (default: "./files")
-        output_file: Path for output file (default: None)
+        start: Start time for processing
+        end: End time for processing
+        radar_ids: List of radar station identifiers
+        temp_dir: Directory for temporary files
+        output_file: Path for output file
     
     Returns:
         dict: Dictionary containing hail band information
     """
-    # Set up AWS NEXRAD data access and get available scans
+    # Set up AWS NEXRAD data access
     conn = nexradaws.NexradAwsInterface()
-    scans = conn.get_avail_scans_in_range(start, end, radar_id)
-    print(f"Found {len(scans)} scans for {radar_id}")
     
-    # Get local scans, downloading if necessary
-    local_scans = get_local_scans(scans, temp_dir)
-    
-    # Initialize the accumulation grid on first scan
+    # Initialize the accumulation grid
     grid_mesh = None
     grid_lat = grid_lon = None
+    grid_bounds = None
     
     try:
-        # Process each radar volume and accumulate max MESH
-        total_files = len(local_scans)
-        for idx, scan in enumerate(local_scans, 1):
-            if scan.filename.endswith("MDM"):
-                continue
+        # Process each radar
+        for radar_id in radar_ids:
+            # Create radar-specific temp directory
+            radar_temp_dir = os.path.join(temp_dir, radar_id)
+            os.makedirs(radar_temp_dir, exist_ok=True)
+            
+            # Get available scans for this radar
+            scans = conn.get_avail_scans_in_range(start, end, radar_id)
+            print(f"Found {len(scans)} scans for {radar_id}")
+            
+            # Get local scans, downloading if necessary
+            local_scans = get_local_scans(scans, radar_temp_dir)
+            
+            # Process each radar volume and accumulate max MESH
+            total_files = len(local_scans)
+            for idx, scan in enumerate(local_scans, 1):
+                if scan.filename.endswith("MDM"):
+                    continue
+                    
+                start_time = time.time()
+                print(f"Processing: {radar_id} - {scan.filename} ({idx}/{total_files})")
                 
-            start_time = time.time()
-            print(f"Processing: {scan.filename} ({idx}/{total_files})")
-            radar = scan.open_pyart()
-            scan_mesh_points = process_radar_volume(radar)
-            if scan_mesh_points is None:
-                continue
+                radar = scan.open_pyart()
+                scan_mesh_points = process_radar_volume(radar)
+                if scan_mesh_points is None:
+                    continue
+                
+                # Get points from this scan
+                scan_lats = np.array([p['lat'] for p in scan_mesh_points])
+                scan_lons = np.array([p['lon'] for p in scan_mesh_points])
+                scan_mesh = np.array([p['mesh_value'] for p in scan_mesh_points])
+                
+                # Update or create grid bounds to encompass all radars
+                grid_bounds = get_grid_bounds(scan_lats, scan_lons, grid_bounds)
+                
+                # Create or update grid
+                if grid_mesh is None:
+                    grid_lat, grid_lon = np.mgrid[
+                        grid_bounds[0]:grid_bounds[1]:500j,
+                        grid_bounds[2]:grid_bounds[3]:500j
+                    ]
+                    grid_mesh = np.zeros_like(grid_lat)
+                
+                # Interpolate this scan's MESH values to grid
+                scan_grid = griddata(
+                    (scan_lats, scan_lons),
+                    scan_mesh,
+                    (grid_lat, grid_lon),
+                    method='linear',
+                    fill_value=0
+                )
+                
+                # Update accumulation grid with maximum values
+                grid_mesh = np.maximum(grid_mesh, scan_grid)
+                
+                print(f"Finished: {radar_id} - {scan.filename} in {time.time() - start_time:.2f} seconds")
+                
+                del radar, scan_grid
             
-            # Get points from this scan
-            scan_lats = np.array([p['lat'] for p in scan_mesh_points])
-            scan_lons = np.array([p['lon'] for p in scan_mesh_points])
-            scan_mesh = np.array([p['mesh_value'] for p in scan_mesh_points])
-            
-            # Create or reuse grid
-            if grid_mesh is None:
-                # Initialize grid on first scan
-                lat_min, lat_max = np.min(scan_lats), np.max(scan_lats)
-                lon_min, lon_max = np.min(scan_lons), np.max(scan_lons)
-                grid_lat, grid_lon = np.mgrid[lat_min:lat_max:500j, lon_min:lon_max:500j]
-                grid_mesh = np.zeros_like(grid_lat)
-            
-            # Interpolate this scan's MESH values to grid
-            scan_grid = griddata(
-                (scan_lats, scan_lons),
-                scan_mesh,
-                (grid_lat, grid_lon),
-                method='linear',
-                fill_value=0
-            )
-            
-            # Update accumulation grid with maximum values
-            grid_mesh = np.maximum(grid_mesh, scan_grid)
-            
-            print(f"Finsihed: {scan.filename} on {time.time() - start_time:.2f} seconds")
-            # print("-" * 40)
-            
-            del radar, scan_grid
-            
+            # Clean up radar-specific temp directory
+            for file in os.listdir(radar_temp_dir):
+                os.remove(os.path.join(radar_temp_dir, file))
+            os.rmdir(radar_temp_dir)
+        
         if grid_mesh is not None:
             # Process accumulated MESH into hail bands
             bands = get_hail_bands(
