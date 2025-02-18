@@ -35,16 +35,22 @@ def add_pyart_metadata(radar, variable_name, metadata_dict, skip_key="data"):
             radar.fields[variable_name][key_name] = metadata_dict[key_name]
     return radar
 
-def thresholded_hail_correction(n):
+def thresholded_hail_correction(n, radar_id=None):
     """
-        Applies a thresholded correction to hail size estimations
-        (supports scalars and NumPy arrays).
+    Applies a thresholded correction to hail size estimations
+    (supports scalars and NumPy arrays).
+    
+    Parameters
+    ----------
+    n : array_like
+        Input array of values to correct
+    radar_id : str, optional
     """
     n = np.asarray(n)
-    
-    corrected = np.where(n < 40, np.maximum(n - 19, 0), n)
-    
-    mask = 19 * (1 - (n - 40) / 30)
+    # KSGP picking up more reflectivity
+    radar_diff = 23 if radar_id == 'KGSP' else 19 
+    corrected = np.where(n < 40, np.maximum(n - radar_diff, 0), n)
+    mask = radar_diff * (1 - (n - 40) / 30)
     corrected = np.where((n >= 40) & (n < 70), n - mask, corrected)
 
     return corrected
@@ -83,6 +89,7 @@ def main(
     minimum_sweeps_raise_expection=4,
     minimum_sweeps_raise_warning=8,
     column_shift_maximum=2500,
+    radar_id=None,
 ):
     """
     PyART Wrapper for PPI MESH
@@ -119,6 +126,8 @@ def main(
         minimum number of sweeps to raise a warning
     column_shift_maximum: float
         maximum horizontal distance a column can shift by
+    radar_id: str
+        radar station identifier
     Returns:
     ========
     mesh_points: dict
@@ -168,6 +177,7 @@ def main(
         minimum_sweeps_raise_expection=minimum_sweeps_raise_expection,
         minimum_sweeps_raise_warning=minimum_sweeps_raise_warning,
         column_shift_maximum=column_shift_maximum,
+        radar_id=radar_id,
     )
     
     # Get the lowest sweep index where MESH is valid
@@ -280,6 +290,7 @@ def ppi_calc(
     minimum_sweeps_raise_expection=4,
     minimum_sweeps_raise_warning=8,
     column_shift_maximum=2500,
+    radar_id=None,
 ):
     """
     Adapted from Witt et al. 1998 and Murillo and Homeyer 2019
@@ -314,6 +325,8 @@ def ppi_calc(
         minimum number of sweeps to raise a warning
     column_shift_maximum: float
         maximum horizontal distance a column can shift by
+    radar_id: str
+        radar station identifier
     Returns
     -------
     output_fields : dictionary
@@ -519,7 +532,7 @@ def ppi_calc(
     elif (
         mesh_method == "mh2019_75"
     ):  # 75th percentile fit from Muillo and Homeyer 2019 (fitted to 5897 reports)
-        mesh = thresholded_hail_correction(15.096 * shi**0.206)
+        mesh = thresholded_hail_correction(15.096 * shi**0.206, radar_id)
         mesh_description = "Maximum Estimated Size of Hail retreival originally developed by Witt et al. 1998 doi:10.1175/1520-0434(1998)013<0286:AEHDAF>2.0.CO;2 and recalibrated by Murillo and Homeyer (2021) doi:10.1175/JAMC-D-20-0271.1 "
         mesh_comment = (
             "75th percentile fit using 5897 hail reports; only valid in the first sweep"
