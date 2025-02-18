@@ -292,19 +292,6 @@ def process_polygon_coordinates(points: List[LatLng], alpha: float = 0.035) -> L
     if len(points) < 3:
         return points
 
-    # # Filter points that are too close to each other
-    # filtered_points = []
-    # min_distance = 0.005  # Minimum distance between points
-
-    # for point in points:
-    #     if not filtered_points or all(
-    #         math.hypot(p.lat - point.lat, p.lng - point.lng) >= min_distance 
-    #         for p in filtered_points
-    #     ):
-    #         filtered_points.append(point)
-
-    # points = filtered_points
-
     # Convert to numpy array for Delaunay triangulation
     coords = np.array([[p.lng, p.lat] for p in points])
     delaunay = None
