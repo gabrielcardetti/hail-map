@@ -48,7 +48,7 @@ def thresholded_hail_correction(n, radar_id=None):
     """
     n = np.asarray(n)
     # KSGP picking up more reflectivity
-    radar_diff = 23 if radar_id == 'KGSP' else 19 
+    radar_diff = 19 if radar_id == 'KGSP' else 15 
     corrected = np.where(n < 40, np.maximum(n - radar_diff, 0), n)
     mask = radar_diff * (1 - (n - 40) / 30)
     corrected = np.where((n >= 40) & (n < 70), n - mask, corrected)
