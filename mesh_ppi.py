@@ -67,7 +67,6 @@ def safe_log(x, eps=1e-10):
     -------
     result : numpy array
 """
-
     result = np.where(x > eps, x, -10)
     np.log(result, out=result, where=result > 0)
     return result
@@ -179,6 +178,11 @@ def main(
         column_shift_maximum=column_shift_maximum,
         radar_id=radar_id,
     )
+    
+    # Need to check if mesh_dict is None before proceeding
+    if mesh_dict is None:
+        # Return empty result or raise exception
+        return []
     
     # Get the lowest sweep index where MESH is valid
     sweep0_idx = np.argmin(elevation_dataset)

@@ -94,7 +94,8 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=2, output_file=None):
         # Identify hail regions for each threshold
         for name, threshold in thresholds.items():
             # Create a mask of where MESH exceeds this threshold
-            mask = mesh > threshold
+            corrected_mesh = mesh - 8
+            mask = corrected_mesh > threshold
             if not np.any(mask):
                 continue  # no hail of this size
             # Morphological filtering: close small gaps within `min_distance_km`
@@ -307,8 +308,8 @@ def get_grid_filename(start: pd.Timestamp, end: pd.Timestamp, radar_ids: List[st
     return f"grid_{radar_str}_{start.strftime('%Y%m%d_%H%M')}_{end.strftime('%Y%m%d_%H%M')}.npz"
 
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2024, 5, 8, 10, tz='EST'),
-    end: pd.Timestamp = pd.Timestamp(2024, 5, 8, 14, tz='EST'),
+    start: pd.Timestamp = pd.Timestamp(2023, 8, 7, 4, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2023, 8, 7, 23, tz='EST'),
     radar_ids: List[str] = ['KGSP', 'KCAE'],
     temp_dir: str = "./files",
     output_file: str = None,
@@ -357,7 +358,7 @@ def main_loop(
                 [grid_mesh],
                 grid_lat,
                 grid_lon,
-                min_distance_km=2,
+                min_distance_km=4,
                 output_file=output_file
             )
             return bands
