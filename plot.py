@@ -9,6 +9,9 @@ import os
 from dataclasses import dataclass
 import time
 from typing import List
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.colors import BoundaryNorm
 
 # Hail size thresholds (in mm) corresponding to various size bands
 thresholds = {
@@ -61,7 +64,7 @@ def sort_boundary_points(points):
     sorted_indices = np.argsort(angles)
     return points[sorted_indices]
 
-def polynomical_correction(n):
+def thresholded_hail_correction(n):
     """
     Applies a thresholded correction to hail size estimations
     (supports scalars and NumPy arrays).
@@ -73,17 +76,15 @@ def polynomical_correction(n):
     radar_id : str, optional
     """
     n = np.asarray(n)
-    constant = 30
-    multiplier = -0.51
-    exponent = 0.1
-    
-    max_correction = 30
-    
-    correction = np.minimum(constant + (multiplier * n) + np.power(n, exponent), max_correction)
-    corrected = np.maximum(n - correction, 0)
+
+    radar_diff = 17
+    corrected = np.where(n < 40, np.maximum(n - radar_diff, 0), n)
+    mask = radar_diff * (1 - (n - 40) / 50)
+    corrected = np.where((n >= 40) & (n < 90), n - mask, corrected)
+
     return corrected
 
-def smooth_mesh_data(mesh_data, sigma=1500.0):
+def smooth_mesh_data(mesh_data, sigma=1.0):
     """
     Apply Gaussian smoothing to the mesh data to create separation between hail bands.
     
@@ -95,10 +96,13 @@ def smooth_mesh_data(mesh_data, sigma=1500.0):
         Smoothed mesh data
     """
     from scipy.ndimage import gaussian_filter
+    
     # Make a copy to avoid modifying the original
     smoothed = mesh_data.copy()
+    
     # Apply Gaussian smoothing
     smoothed = gaussian_filter(smoothed, sigma=sigma)
+    
     return smoothed
 
 def get_hail_bands(mesh_data, lat, lon, min_distance_km=2, output_file=None):
@@ -133,7 +137,7 @@ def get_hail_bands(mesh_data, lat, lon, min_distance_km=2, output_file=None):
 
         # Identify hail regions for each threshold
         for name, threshold in thresholds.items():
-            mask = polynomical_correction(mesh) > threshold
+            mask = thresholded_hail_correction(mesh) > threshold
             if not np.any(mask):
                 continue  # no hail of this size
             # Morphological filtering: close small gaps within `min_distance_km`
@@ -346,13 +350,14 @@ def get_grid_filename(start: pd.Timestamp, end: pd.Timestamp, radar_ids: List[st
     return f"grid_{radar_str}_{start.strftime('%Y%m%d_%H%M')}_{end.strftime('%Y%m%d_%H%M')}.npz"
 
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 1, tz='EST'),
-    end: pd.Timestamp = pd.Timestamp(2023, 5, 9, 23, tz='EST'),
+    start: pd.Timestamp = pd.Timestamp(2023, 8, 7, 13, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2023, 8, 7, 23, tz='EST'),
     radar_ids: List[str] = ['KGSP', 'KCAE'],
     temp_dir: str = "./files",
     output_file: str = None,
     grid_dir: str = "./grids",
-    smooth_sigma: float = 1.0
+    smooth_sigma: float = 1.0,
+    output_plot: str = None
 ) -> dict:
     """
     Process radar data for multiple radars over a given time range.
@@ -365,6 +370,7 @@ def main_loop(
         output_file: Path for output file
         grid_dir: Directory for saved grid files
         smooth_sigma: Smoothing parameter for mesh data (higher = more smoothing)
+        output_plot: Path to save the plot image (if None, will display the plot)
     """
     os.makedirs(grid_dir, exist_ok=True)
     grid_filename = get_grid_filename(start, end, radar_ids)
@@ -397,15 +403,58 @@ def main_loop(
             print(f"Applying smoothing with sigma={smooth_sigma} to mesh data")
             smoothed_mesh = smooth_mesh_data(grid_mesh, sigma=smooth_sigma)
             
-            # Process hail bands using smoothed data
-            bands = get_hail_bands(
-                [smoothed_mesh],
-                grid_lat,
-                grid_lon,
-                min_distance_km=5,
-                output_file=output_file
-            )
-            return bands
+            # Plot the smoothed mesh data instead of getting hail bands
+            print("Plotting smoothed MESH data")
+            
+            # Create a colormap for MESH values with appropriate levels
+            levels = [0, 19, 25, 32, 38, 44, 51, 57, 64, 76, 102, 120]
+            colors = ['#FFFFFF', '#98FB98', '#00FF00', '#FFFF00', '#FFD700', 
+                     '#FFA500', '#FF4500', '#FF0000', '#B22222', '#8B0000', '#800080']
+            cmap = mcolors.ListedColormap(colors)
+            norm = BoundaryNorm(levels, cmap.N)
+            
+            # Create proper 2D meshgrid for plotting
+            plt.figure(figsize=(12, 10))
+            
+            # Transpose both the coordinates and data for correct orientation
+            mesh_plot = plt.pcolormesh(grid_lat.T, grid_lon.T, 
+                                      thresholded_hail_correction(smoothed_mesh).T, 
+                                      cmap=cmap, norm=norm)
+            
+            # Add colorbar
+            cbar = plt.colorbar(mesh_plot, label='Maximum Estimated Size of Hail (mm)')
+            
+            # Add threshold markers to colorbar
+            cbar_ticks = levels
+            cbar.set_ticks(cbar_ticks)
+            
+            # Add size labels to specific ticks
+            size_labels = {
+                19: "0.75\"", 25: "1\"", 32: "1.2\"", 38: "1.5\"", 
+                44: "1.75\"", 51: "2\"", 57: "2.25\"", 64: "2.5\"",
+                76: "3\"", 102: "4\""
+            }
+            cbar_ticklabels = [f"{t} {size_labels.get(t, '')}" for t in cbar_ticks]
+            cbar.set_ticklabels(cbar_ticklabels)
+            
+            # Add grid and set labels
+            plt.grid(True, alpha=0.5)
+            plt.xlabel('Latitude')
+            plt.ylabel('Longitude')
+            
+            # Set title with time range and radar IDs
+            radar_str = ', '.join(radar_ids)
+            time_str = f"{start.strftime('%Y-%m-%d %H:%M')} to {end.strftime('%Y-%m-%d %H:%M')} {start.tz}"
+            plt.title(f"Maximum Estimated Size of Hail (MESH)\n{radar_str} - {time_str}")
+            
+            # Save or show the plot
+            if output_plot:
+                plt.savefig(output_plot, dpi=300, bbox_inches='tight')
+                print(f"Plot saved to {output_plot}")
+            else:
+                plt.show()
+                
+            return {'plot_created': True}
             
     except Exception as e:
         import traceback
@@ -417,12 +466,5 @@ def main_loop(
         return None
 
 if __name__ == "__main__":
-    hail_bands = main_loop()
-    for size, info in hail_bands.items():
-        print(f"\nHail size: {size} (>= {info['threshold_mm']} mm)")
-        for i, polygon in enumerate(info['boundary_points'], start=1):
-            print(f" Region {i}: {len(polygon)} boundary points")
-            for pt in polygon[:5]:
-                print(f"  - {pt[0]:.4f}, {pt[1]:.4f}")
-            if len(polygon) > 5:
-                print("  ...")
+    result = main_loop(output_plot="mesh_plot.png")
+    print(f"Processing complete: {result}")

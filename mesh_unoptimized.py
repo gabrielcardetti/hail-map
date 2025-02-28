@@ -61,8 +61,8 @@ def main(
     mesh_fname="mesh",
     posh_fname="posh",
     radar_band="S",
-    min_range=1,
-    max_range=140,
+    min_range=10,
+    max_range=130,
     mesh_method="mh2019_75",
     correct_cband_refl=True,
     minimum_sweeps_raise_expection=4,
@@ -141,7 +141,7 @@ def main(
         elevation_dataset.append(radar.fixed_angle["data"][sweep_idx])
 
     # run retrieval
-    mesh_dict = ppi_calc(
+    result = ppi_calc(
         reflectivity_dataset,
         elevation_dataset,
         azimuth_dataset,
@@ -159,10 +159,13 @@ def main(
         radar_id=radar_id,
     )
     
-    # Need to check if mesh_dict is None before proceeding
-    if mesh_dict is None:
+    # Need to check if result is None before proceeding
+    if result is None:
         # Return empty result or raise exception
         return []
+    
+    # Unpack the returned tuple of dictionaries
+    ke_dict, shi_dict, mesh_dict, posh_dict = result
     
     # Get the lowest sweep index where MESH is valid
     sweep0_idx = np.argmin(elevation_dataset)
@@ -267,8 +270,8 @@ def ppi_calc(
     radar_altitude,
     levels,
     radar_band="S",
-    min_range=1,
-    max_range=140,
+    min_range=10,
+    max_range=130,
     mesh_method="mh2019_75",
     correct_cband_refl=True,
     minimum_sweeps_raise_expection=4,
@@ -309,8 +312,6 @@ def ppi_calc(
         minimum number of sweeps to raise a warning
     column_shift_maximum: float
         maximum horizontal distance a column can shift by
-    radar_id: str
-        radar station identifier
     Returns
     -------
     output_fields : dictionary
@@ -354,6 +355,7 @@ def ppi_calc(
         return None
 
     # Initialize sweep coords
+    sweep0_nrays = len(azimuth_dataset[0])
     sweep0_nbins = len(range_dataset[0])
     n_ppi = len(elevation_dataset)
     z_dataset = (
@@ -434,74 +436,57 @@ def ppi_calc(
     # calculate shi on lowest sweep coordinates
     shi = np.zeros((len(azimuth_dataset[0]), len(range_dataset[0])))
     shi_mask = np.zeros((len(azimuth_dataset[0]), len(range_dataset[0])), dtype=bool)
-    
-    # Vectorize range mask calculation
-    range_mask = (s_dataset[0] < min_range * 1000) | (s_dataset[0] > max_range * 1000)
-    shi_mask[:, range_mask] = True
-    
-    # Vectorize column validity mask
-    valid_columns = np.array([lookup is not None for lookup in s_lookup_dataset])
-    shi_mask[:, ~valid_columns] = True
-    
-    # Pre-calculate all azimuth differences and closest indices
-    closest_az_indices = {}
-    for sweep_idx in range(1, n_ppi):
-        az_diff = np.abs(azimuth_dataset[sweep_idx][:, np.newaxis] - azimuth_dataset[0])
-        closest_az_indices[sweep_idx] = np.argmin(az_diff, axis=0)
-    
-    # Process all valid columns at once
-    valid_az_indices, valid_rg_indices = np.where(~shi_mask)
-    
-    for sweep_idx in range(n_ppi):
-        if sweep_idx == 0:
-            # Process first sweep directly
-            column_elements = (
-                hail_ke_dataset[0][valid_az_indices, valid_rg_indices] * 
-                wt_dataset[0][valid_rg_indices]
-            )
-            dz_values = np.array([dz_dataset[rg][0] for rg in valid_rg_indices])
-            shi_elements = column_elements * dz_values
-            
-        else:
-            # Get closest azimuth indices for this sweep
-            sweep_az_indices = closest_az_indices[sweep_idx][valid_az_indices]
-            
-            # Get range indices for this sweep
-            sweep_rg_indices = np.array([
-                s_lookup_dataset[rg][sweep_idx] if s_lookup_dataset[rg] is not None else -1
-                for rg in valid_rg_indices
-            ])
-            
-            # Create valid mask for this sweep
-            valid_sweep_mask = (
-                (sweep_rg_indices != -1) & 
-                (np.abs(azimuth_dataset[sweep_idx][sweep_az_indices] - 
-                       azimuth_dataset[0][valid_az_indices]) <= 1)
-            )
-            
-            if not np.any(valid_sweep_mask):
+    # loop through each ray in the lowest sweep
+    for az_idx in range(sweep0_nrays):
+        sweep0_az = azimuth_dataset[0][az_idx]
+        # loop through each range bin for the ray
+        for rg_idx in range(sweep0_nbins):
+            # check if sweep0 (lowest) range is outside of limits
+            if (
+                s_dataset[0][rg_idx] < min_range * 1000
+                or s_dataset[0][rg_idx] > max_range * 1000
+            ):
+                shi_mask[az_idx, rg_idx] = True
                 continue
-                
-            # Calculate elements for valid points
-            valid_points = np.where(valid_sweep_mask)[0]
-            sweep_elements = np.zeros(len(valid_az_indices))
-            
-            sweep_elements[valid_points] = (
-                hail_ke_dataset[sweep_idx][sweep_az_indices[valid_points], 
-                                         sweep_rg_indices[valid_points]] *
-                wt_dataset[sweep_idx][sweep_rg_indices[valid_points]]
-            )
-            
-            # Get dz values for this sweep
-            dz_values = np.array([
-                dz_dataset[rg][sweep_idx] if dz_dataset[rg] is not None else 0
-                for rg in valid_rg_indices
-            ])
-            
-            shi_elements = sweep_elements * dz_values
-            
-        # Add to SHI grid
-        shi[valid_az_indices, valid_rg_indices] += 0.1 * shi_elements
+            # check if a valid column exists at this range
+            if s_lookup_dataset[rg_idx] is None:
+                shi_mask[az_idx, rg_idx] = True
+                continue
+            # init shi elements
+            column_shi_elements = [
+                hail_ke_dataset[0][az_idx, rg_idx] * wt_dataset[0][rg_idx]
+            ]  # HKE * WT
+            # loop through the sweep entries in the lookup table. ASSUMES ORDERED SWEEPS, AS IT WILL REMOVE BIRDBATH SCANS THAT FALL AT THE END OF THE VOLUME
+            for sweep_idx in range(1, len(s_lookup_dataset[rg_idx]), 1):
+                #check if sweep azimuth value matches sweep0
+                search_azi = True
+                try:
+                    if sweep0_az == azimuth_dataset[sweep_idx][az_idx]:
+                        search_azi = False
+                except Exception as e:
+                    #will fall if index exceeds array size
+                    pass
+                if search_azi:
+                    # if not, find nearest azi
+                    closest_az_idx = np.argmin(np.abs(azimuth_dataset[sweep_idx]-sweep0_az))
+                    #if the azimuth differs by more than 1 degree from sweep0, use a value of -999 in the shi calculation.
+                    if azimuth_dataset[sweep_idx][closest_az_idx] - sweep0_az > 1:
+                        column_shi_elements.append(-999)
+                        continue
+                else:
+                    closest_az_idx = az_idx
+                # find closest point using great circle arc to sweep0 (lowest) location
+                closest_rng_idx = s_lookup_dataset[rg_idx][sweep_idx]
+                column_shi_elements.append(
+                    hail_ke_dataset[sweep_idx][closest_az_idx, closest_rng_idx]
+                    * wt_dataset[sweep_idx][closest_rng_idx]
+                )
+            # insert into SHI if there's a valid value
+            if np.max(column_shi_elements) > 0:
+                valid_sweep_idx = column_shi_elements != -999
+                shi[az_idx, rg_idx] = 0.1 * np.sum(
+                    column_shi_elements * dz_dataset[rg_idx][valid_sweep_idx]
+                )
 
     # calc maximum estimated severe hail (mm)
     if (
@@ -550,6 +535,23 @@ def ppi_calc(
 
     # add grids to radar object
     # unpack E into cfradial representation
+    ke_dict = {
+        "data": hail_ke_dataset,
+        "units": "Jm-2s-1",
+        "long_name": "Hail Kinetic Energy",
+        "description": "Hail Kinetic Energy developed by Witt et al. 1998 doi:10.1175/1520-0434(1998)013<0286:AEHDAF>2.0.CO;2 "
+        + hail_refl_correction_description,
+    }
+
+    # SHI,MESH and POSH are only valid at the surface as a single sweep
+    shi_dict = {
+        "data": shi,
+        "units": "Jm-1s-1",
+        "long_name": "Severe Hail Index",
+        "description": "Severe Hail Index developed by Witt et al. (1998) doi:10.1175/1520-0434(1998)013<0286:AEHDAF>2.0.CO;2 "
+        + hail_refl_correction_description,
+        "comments": "only valid in the first sweep",
+    }
 
     mesh_dict = {
         "data": mesh,
@@ -559,5 +561,14 @@ def ppi_calc(
         "comments": mesh_comment,
     }
 
+    posh_dict = {
+        "data": posh,
+        "units": "%",
+        "long_name": "Probability of Severe Hail",
+        "description": "Probability of Severe Hail developed by Witt et al. (1998) doi:10.1175/1520-0434(1998)013<0286:AEHDAF>2.0.CO;2 "
+        + hail_refl_correction_description,
+        "comments": "only valid in the first sweep",
+    }
+
     # return output_fields dictionary
-    return mesh_dict
+    return ke_dict, shi_dict, mesh_dict, posh_dict

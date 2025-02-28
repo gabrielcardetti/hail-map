@@ -4,9 +4,85 @@ from utils import (
     parse_hail_data, 
     process_polygons, 
     ProcessedPolygonData, 
-    HailJSONEncoder
+    HailJSONEncoder,
+    LatLng
 )
 import json
+import numpy as np
+
+
+def smooth_polygon(points: List[LatLng], iterations: int = 2) -> List[LatLng]:
+    """
+    Smooth a polygon using Chaikin's algorithm.
+    
+    Args:
+        points: List of polygon vertices as LatLng objects
+        iterations: Number of smoothing iterations
+        
+    Returns:
+        List of LatLng points forming the smoothed polygon
+    """
+    if len(points) < 3:
+        return points
+    
+    # Make sure the polygon is closed
+    closed = points[0] == points[-1]
+    if closed:
+        points = points[:-1]  # Remove the closing point temporarily
+        
+    for _ in range(iterations):
+        new_points = []
+        n = len(points)
+        
+        for i in range(n):
+            p0 = points[i]
+            p1 = points[(i + 1) % n]
+            
+            # Generate two points per edge
+            q0 = LatLng(
+                lat=0.75 * p0.lat + 0.25 * p1.lat,
+                lng=0.75 * p0.lng + 0.25 * p1.lng
+            )
+            q1 = LatLng(
+                lat=0.25 * p0.lat + 0.75 * p1.lat,
+                lng=0.25 * p0.lng + 0.75 * p1.lng
+            )
+            
+            new_points.append(q0)
+            new_points.append(q1)
+            
+        points = new_points
+    
+    # Re-close the polygon if it was closed
+    if closed:
+        points.append(points[0])
+        
+    return points
+
+
+def smooth_polygons(polygons: List[ProcessedPolygonData], iterations: int = 2) -> List[ProcessedPolygonData]:
+    """
+    Apply smoothing to all polygons.
+    
+    Args:
+        polygons: List of processed polygon data
+        iterations: Number of smoothing iterations
+        
+    Returns:
+        List of smoothed polygon data
+    """
+    smoothed_polygons = []
+    
+    for polygon in polygons:
+        # Create a new polygon with smoothed positions
+        smoothed_polygon = polygon.copy()
+        
+        if 'positions' in polygon:
+            smoothed_polygon['positions'] = smooth_polygon(polygon['positions'], iterations)
+        
+        smoothed_polygons.append(smoothed_polygon)
+    
+    return smoothed_polygons
 
 
 def summarize_hail_data(polygons: List[ProcessedPolygonData]) -> Dict:
@@ -70,12 +146,14 @@ def print_summary(summary: Dict) -> None:
         print(f"  {size}mm ({size/25.4:.2f} inches): {count} regions")
 
 
-def main(file_path: str) -> None:
+def main(file_path: str, smooth: bool = False, smooth_iterations: int = 2) -> None:
     """
     Main function to process hail contour data file.
 
     Args:
         file_path: Path to the hail contour data file
+        smooth: Whether to apply polygon smoothing
+        smooth_iterations: Number of smoothing iterations
     """
     try:
         # Read the file
@@ -91,9 +169,15 @@ def main(file_path: str) -> None:
         processed_polygons = process_polygons(polygons)
         print(f"\nProcessed {len(processed_polygons)} polygons")
 
+        # Apply smoothing if requested
+        processed_polygons = smooth_polygons(processed_polygons, smooth_iterations)
+        print(f"Applied {smooth_iterations} smoothing iterations to polygons")
+
         # save processed_polygons as a .json file
-        with open('processed_polygons.json', 'w') as f:
+        output_filename = 'processed_polygons_smooth.json' if smooth else 'processed_polygons.json'
+        with open(output_filename, 'w') as f:
             json.dump(processed_polygons, f, cls=HailJSONEncoder, indent=2)
+            print(f"Saved processed polygons to {output_filename}")
 
         # Generate and print summary
         summary = summarize_hail_data(polygons)
@@ -108,4 +192,4 @@ def main(file_path: str) -> None:
 if __name__ == "__main__":
     # Example usage
     file_path = "hail_contours.txt"
-    main(file_path)
+    main(file_path, smooth=True, smooth_iterations=2)
