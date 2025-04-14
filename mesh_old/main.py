@@ -380,8 +380,8 @@ def main_loop(
                 print(f"Time to download scans: {time.time() - t0:.2f}s")
                 
                 # Process each radar volume and accumulate max MESH
-                for idx, scan in results.iter_success():
-                    print(f"\nProcessing: {radar_id} - {scan.filename} ({idx}/{total_files})")
+                for idx, scan in enumerate(results.iter_success()):
+                    print(f"\nProcessing: {radar_id} - {scan.filename} ({idx+1}/{total_files})")
                     if scan.filename.endswith("MDM"):
                         continue
                     print(f"\n=== Processing scan: {scan.filename} ===")
