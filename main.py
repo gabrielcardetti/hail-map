@@ -235,7 +235,9 @@ def process_radar_grid(
     start: pd.Timestamp,
     end: pd.Timestamp,
     radar_ids: List[str],
-    temp_dir: str
+    temp_dir: str,
+    grid_center_lat: float = 34.0,
+    grid_center_lon: float = -81.0
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Process radar data and create accumulated grid.
@@ -245,6 +247,8 @@ def process_radar_grid(
         end: End time for processing
         radar_ids: List of radar station identifiers
         temp_dir: Directory for temporary files
+        grid_center_lat: Latitude of the grid center
+        grid_center_lon: Longitude of the grid center
     
     Returns:
         Tuple of (grid_mesh, grid_lat, grid_lon)
@@ -346,13 +350,15 @@ def get_grid_filename(start: pd.Timestamp, end: pd.Timestamp, radar_ids: List[st
     return f"grid_{radar_str}_{start.strftime('%Y%m%d_%H%M')}_{end.strftime('%Y%m%d_%H%M')}.npz"
 
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 1, tz='EST'),
-    end: pd.Timestamp = pd.Timestamp(2023, 5, 9, 23, tz='EST'),
-    radar_ids: List[str] = ['KGSP', 'KCAE'],
+    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 19, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2023, 5, 9, 21, tz='EST'),
+    radar_ids: List[str] = ['KGRK', 'KEWX'],
     temp_dir: str = "./files",
     output_file: str = None,
     grid_dir: str = "./grids",
-    smooth_sigma: float = 1.0
+    smooth_sigma: float = 1.0,
+    grid_center_lat: float = 30.26,
+    grid_center_lon: float = -97.70
 ) -> dict:
     """
     Process radar data for multiple radars over a given time range.
@@ -365,6 +371,8 @@ def main_loop(
         output_file: Path for output file
         grid_dir: Directory for saved grid files
         smooth_sigma: Smoothing parameter for mesh data (higher = more smoothing)
+        grid_center_lat: Latitude of the grid center
+        grid_center_lon: Longitude of the grid center
     """
     os.makedirs(grid_dir, exist_ok=True)
     grid_filename = get_grid_filename(start, end, radar_ids)
@@ -380,7 +388,14 @@ def main_loop(
             grid_lon = grid_data['grid_lon']
         else:
             # Process radar data to create grid
-            grid_mesh, grid_lat, grid_lon = process_radar_grid(start, end, radar_ids, temp_dir)
+            grid_mesh, grid_lat, grid_lon = process_radar_grid(
+                start, 
+                end, 
+                radar_ids, 
+                temp_dir,
+                grid_center_lat=grid_center_lat,
+                grid_center_lon=grid_center_lon
+            )
             
             if grid_mesh is not None:
                 # Save grid data

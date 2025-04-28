@@ -6,49 +6,96 @@ from main import (
 import os
 import time
 
+grid_configs = [
+    {
+        "grid_id": "grid_1",
+        "radar_ids": ['KGSP', 'KCAE'],
+        "grid_center_lat": 34.0,
+        "grid_center_lon": -81.0,
+        "output_dir": "./contours-kgsp-kcae-2025-until-march-11",
+        "output_file_prefix": "hail_contours_multiple",
+        "temp_dir_prefix": "./files/file"
+    },
+     {
+        "grid_id": "grid_2",
+        "radar_ids": ['KGRK', 'KEWX'],
+        "grid_center_lat": 30.26,
+        "grid_center_lon": -97.70,
+        "output_dir": "./contours-kgrk-kewx-2025-until-march-11",
+        "output_file_prefix": "hail_contours_multiple",
+        "temp_dir_prefix": "./files/file"
+    },
+    # Add more places
+]
+
 
 def process_time_range(time_range: tuple[pd.Timestamp, pd.Timestamp]) -> dict:
     """
-    Process radar data for a given time range.
+    Process radar data for a given time range across multiple grid configurations.
 
     Args:
         time_range (tuple): Tuple containing (start_time, end_time) as pd.Timestamp objects
     """
     range_start_time = time.time()
     start_time, end_time = time_range
-    radar_id = 'KGSP'
+    
+    # Initialize results dictionary
+    all_results = {}
+    
+    for config in grid_configs:
+        grid_id = config["grid_id"]
+        radar_ids = config["radar_ids"]
+        grid_center_lat = config["grid_center_lat"]
+        grid_center_lon = config["grid_center_lon"]
+        
+        print(f"\nProcessing grid {grid_id}: lat={grid_center_lat}, lon={grid_center_lon}, radars={radar_ids}")
+        
+        # Construct output filename for hail contours
+        output_dir = config["output_dir"]
+        os.makedirs(output_dir, exist_ok=True)
+        output_file = os.path.join(
+            output_dir,
+            f"{config['output_file_prefix']}_{start_time.strftime('%Y%m%d_%H%M')}_{grid_id}.txt"
+        )
 
-    # Construct output filename for hail contours
-    output_dir = "./contours-kgsp"
-    os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(
-        output_dir,
-        f"hail_contours_{radar_id}_{start_time.strftime('%Y%m%d_%H%M')}.txt"
-    )
+        # Create unique directory for each time range and grid to store temporary radar files
+        radar_str = '_'.join(radar_ids)
+        temp_dir = f"{config['temp_dir_prefix']}_{radar_str}_{start_time.strftime('%Y%m%d_%H%M')}_{grid_id}"
 
-    # Create unique directory for each time range to store temporary radar files
-    temp_dir = f"./files/file_{radar_id}_{start_time.strftime('%Y%m%d_%H%M')}"
+        print(f"Processing period: {start_time} to {end_time}")
 
-    print(f"\nProcessing period: {start_time} to {end_time}")
-
-    # Call main processing function with all necessary parameters
-    result = main_loop(
-        start=start_time,
-        end=end_time,
-        radar_id=radar_id,
-        temp_dir=temp_dir,
-        output_file=output_file
-    )
+        try:
+            # Call main processing function with all necessary parameters
+            result = main_loop(
+                start=start_time,
+                end=end_time,
+                radar_ids=radar_ids,
+                temp_dir=temp_dir,
+                output_file=output_file,
+                grid_center_lat=grid_center_lat,
+                grid_center_lon=grid_center_lon
+            )
+            
+            # Store result for this grid
+            all_results[grid_id] = result
+            
+            # Clean up temp directory
+            if os.path.exists(temp_dir):
+                for file in os.listdir(temp_dir):
+                    os.remove(os.path.join(temp_dir, file))
+                os.rmdir(temp_dir)
+                print(f"✓ Successfully emptied temp dir: {temp_dir}")
+                
+        except Exception as e:
+            print(f"Error processing time range {start_time} to {end_time} for grid {grid_id}")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+            all_results[grid_id] = None
+    
     total_range_time = time.time() - range_start_time
-    print(
-        f"✓ Successfully processed period: {time_range[0]} to {time_range[1]} it takes {total_range_time:.2f} seconds")
-
-    # empty the temp dir
-    for file in os.listdir(temp_dir):
-        os.remove(os.path.join(temp_dir, file))
-    os.rmdir(temp_dir)
-    print(f"✓ Successfully emptied temp dir: {temp_dir}")
-    return result
+    print(f"✓ Successfully processed period: {time_range[0]} to {time_range[1]} across {len(grid_configs)} grids in {total_range_time:.2f} seconds")
+    
+    return all_results
 
 
 if __name__ == "__main__":
