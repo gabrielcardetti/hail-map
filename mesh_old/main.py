@@ -300,7 +300,9 @@ def main_loop(
     temp_dir: str = "./files",
     output_file: str = None,
     grid_dir: str = "./grids",
-    min_distance_km: float = 4
+    min_distance_km: float = 4,
+    grid_center_lat: float = 30.26,
+    grid_center_lon: float = -97.70
 ) -> dict:
     """
     Process radar data for a given time range and radar(s).
@@ -313,6 +315,8 @@ def main_loop(
         output_file: Path for output file
         grid_dir: Directory for saved grid files
         min_distance_km: Distance parameter for hail band calculation
+        grid_center_lat: Latitude of the grid center
+        grid_center_lon: Longitude of the grid center
     
     Returns:
         Dictionary with hail band information
@@ -338,8 +342,8 @@ def main_loop(
             print(f"Processing radar data for {', '.join(radar_ids)} from {start} to {end}")
             
             # Hardcoded grid parameters - centered approximately between KGSP and KCAE
-            grid_center_lat = 34.0
-            grid_center_lon = -81.0
+            grid_center_lat = grid_center_lat
+            grid_center_lon = grid_center_lon
             grid_width_km = 300
             
             # Create a common grid independent of radar locations
@@ -358,18 +362,14 @@ def main_loop(
             
             print(f"Created common grid centered at ({grid_center_lat:.4f}, {grid_center_lon:.4f})")
             
-            # Initialize accumulation grid for MESH
             accumulated_mesh = None
-            # Process each radar
             for radar_id in radar_ids:
-                # Set up AWS NEXRAD data access
                 conn = nexradaws.NexradAwsInterface()
                 t0 = time.time()
                 scans = conn.get_avail_scans_in_range(start, end, radar_id)
                 print(f"Found {len(scans)} scans for {radar_id}")
                 print(f"Time to get available scans: {time.time() - t0:.2f}s")
                 
-                # Create radar-specific temp directory
                 radar_temp_dir = os.path.join(temp_dir, radar_id)
                 os.makedirs(radar_temp_dir, exist_ok=True)
                 
@@ -493,7 +493,7 @@ def main_loop(
 if __name__ == "__main__":
     # Example usage
     start_time = pd.Timestamp(2023, 5, 9, 7, tz='EST')
-    end_time = pd.Timestamp(2023, 5, 10, 1, tz='EST')
+    end_time = pd.Timestamp(2023, 5, 9, 10, tz='EST')
     
     hail_bands = main_loop(
         start=start_time,
