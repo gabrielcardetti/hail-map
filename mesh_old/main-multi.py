@@ -7,15 +7,15 @@ import os
 import time
 
 grid_configs = [
-    {
-        "grid_id": "grid_1",
-        "radar_ids": ['KGSP', 'KCAE'],
-        "grid_center_lat": 34.0,
-        "grid_center_lon": -81.0,
-        "output_dir": "./contours-kgsp-kcae-2025-until-march-11",
-        "output_file_prefix": "hail_contours_multiple",
-        "temp_dir_prefix": "./files/file"
-    },
+    # {
+    #     "grid_id": "grid_1",
+    #     "radar_ids": ['KGSP', 'KCAE'],
+    #     "grid_center_lat": 34.0,
+    #     "grid_center_lon": -81.0,
+    #     "output_dir": "./contours-kgsp-kcae-2025-until-march-11",
+    #     "output_file_prefix": "hail_contours_multiple",
+    #     "temp_dir_prefix": "./files/file"
+    # },
      {
         "grid_id": "grid_2",
         "radar_ids": ['KGRK', 'KEWX'],
@@ -97,9 +97,9 @@ def process_time_range(time_range: tuple[pd.Timestamp, pd.Timestamp]) -> dict:
 
 if __name__ == "__main__":
     time_ranges = []
-    
+    years = [2024]
     # Process all days for 2022, 2023, and 2024
-    for year in [2022, 2023, 2024]:
+    for year in years:
         for month in range(1, 13):  # All 12 months
             # Determine days in month (accounting for leap years)
             if month in [4, 6, 9, 11]:
@@ -122,24 +122,27 @@ if __name__ == "__main__":
                     )
                 )
     
-    # Process January and partial February 2025 (keeping existing code)
-    year = 2025
-    for month in [1, 2, 3]:  # January and February only
-        if month == 1:  # January
-            days = 31
-        elif month == 2:  # February
-            days = 28  # Only process until Feb 17
-        else:  # March
-            days = 9
+    # # Process January and partial February 2025 (keeping existing code)
+    # year = 2025
+    # for month in [1, 2, 3]:  # January and February only
+    #     if month == 1:  # January
+    #         days = 31
+    #     elif month == 2:  # February
+    #         days = 28  # Only process until Feb 17
+    #     else:  # March
+    #         days = 9
 
-        # Add each day of the month
-        for day in range(1, days + 1):
-            time_ranges.append(
-                (
-                    pd.Timestamp(year, month, day, 0, tz='UTC'),
-                    pd.Timestamp(year, month, day, 23, 59, tz='UTC')
-                )
-            )
+    #     # Add each day of the month
+    #     for day in range(1, days + 1):
+    #         time_ranges.append(
+    #             (
+    #                 pd.Timestamp(year, month, day, 0, tz='UTC'),
+    #                 pd.Timestamp(year, month, day, 23, 59, tz='UTC')
+    #             )
+    #         )
+
+
+    time_ranges = time_ranges[:1]
 
     num_cores = max(1, mp.cpu_count() - 15)
 
