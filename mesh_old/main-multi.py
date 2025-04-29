@@ -21,8 +21,8 @@ grid_configs = [
         "radar_ids": ['KGRK', 'KEWX'],
         "grid_center_lat": 30.26,
         "grid_center_lon": -97.70,
-        "output_dir": "./contours-kgrk-kewx-2025-until-march-11",
-        "output_file_prefix": "hail_contours_multiple",
+        "output_dir": "./austin-2024",
+        "output_file_prefix": "austin-2024",
         "temp_dir_prefix": "./files/file"
     },
     # Add more places
@@ -140,9 +140,6 @@ if __name__ == "__main__":
     #                 pd.Timestamp(year, month, day, 23, 59, tz='UTC')
     #             )
     #         )
-
-
-    time_ranges = time_ranges[:1]
 
     num_cores = max(1, mp.cpu_count() - 15)
 
