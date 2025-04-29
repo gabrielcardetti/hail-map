@@ -68,7 +68,6 @@ def main(
     minimum_sweeps_raise_expection=4,
     minimum_sweeps_raise_warning=8,
     column_shift_maximum=2500,
-    radar_id=None,
 ):
     """
     PyART Wrapper for PPI MESH
@@ -156,13 +155,12 @@ def main(
         minimum_sweeps_raise_expection=minimum_sweeps_raise_expection,
         minimum_sweeps_raise_warning=minimum_sweeps_raise_warning,
         column_shift_maximum=column_shift_maximum,
-        radar_id=radar_id,
     )
     
     # Need to check if mesh_dict is None before proceeding
     if mesh_dict is None:
         # Return empty result or raise exception
-        return []
+        return None
     
     # Get the lowest sweep index where MESH is valid
     sweep0_idx = np.argmin(elevation_dataset)
@@ -274,7 +272,6 @@ def ppi_calc(
     minimum_sweeps_raise_expection=4,
     minimum_sweeps_raise_warning=8,
     column_shift_maximum=2500,
-    radar_id=None,
 ):
     """
     Adapted from Witt et al. 1998 and Murillo and Homeyer 2019

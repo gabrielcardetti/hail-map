@@ -350,8 +350,8 @@ def get_grid_filename(start: pd.Timestamp, end: pd.Timestamp, radar_ids: List[st
     return f"grid_{radar_str}_{start.strftime('%Y%m%d_%H%M')}_{end.strftime('%Y%m%d_%H%M')}.npz"
 
 def main_loop(
-    start: pd.Timestamp = pd.Timestamp(2023, 5, 9, 19, tz='EST'),
-    end: pd.Timestamp = pd.Timestamp(2023, 5, 9, 21, tz='EST'),
+    start: pd.Timestamp = pd.Timestamp(2025, 3, 23, 10, tz='EST'),
+    end: pd.Timestamp = pd.Timestamp(2025, 3, 23, 23, tz='EST'),
     radar_ids: List[str] = ['KGRK', 'KEWX'],
     temp_dir: str = "./files",
     output_file: str = None,
